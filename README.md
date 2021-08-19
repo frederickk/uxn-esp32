@@ -1,19 +1,22 @@
 # Uxn
 
-An assembler and emulator for the [Uxn stack-machine](https://wiki.xxiivv.com/site/uxn.html), written in ANSI C. 
 
+An assembler and emulator for the [Uxn stack-machine](https://wiki.xxiivv.com/site/uxn.html), written in ANSI C.
+
+
+---
 ## Build
 
-### Linux 
+### Linux
 
 To build the Uxn emulator, you must have [SDL2](https://wiki.libsdl.org/).
 
 ```sh
-./build.sh 
+./build.sh
 	--debug # Add debug flags to compiler
 ```
 
-### Plan 9 
+### Plan 9
 
 To build the Uxn emulator on [9front](http://9front.org/), via [npe](https://git.sr.ht/~ft/npe):
 
@@ -35,6 +38,8 @@ cd uxn
 ./build.sh
 ```
 
+
+---
 ## Getting Started
 
 Begin by building the assembler and emulator by running the build script. The assembler(`uxnasm`) and emulator(`uxnemu`) are created in the `/bin` folder.
@@ -43,9 +48,9 @@ Begin by building the assembler and emulator by running the build script. The as
 ./build.sh
 ```
 
-### Assembler 
+### Assembler
 
-The following command will create an Uxn-compatible rom from an [uxntal file](https://wiki.xxiivv.com/site/uxntal.html), point to a different .tal file in `/projects` to assemble a different rom. 
+The following command will create an Uxn-compatible rom from an [uxntal file](https://wiki.xxiivv.com/site/uxntal.html), point to a different .tal file in `/projects` to assemble a different rom.
 
 ```
 bin/uxnasm projects/examples/demos/life.tal bin/life.rom
@@ -69,12 +74,42 @@ You can send events from Uxn to another application, or another instance of uxn,
 uxnemu orca.rom | shim
 ```
 
+
+---
 ## Emulator Controls
 
 - `F1` toggle zoom
 - `F2` toggle debug
 - `F3` capture screen
 
+
+---
 ## Need a hand?
 
 Find us in `#uxn`, on irc.esper.net
+
+
+---
+## Flashing ESP32 Hardware
+
+Before building and flashing be sure to install dependencies.
+
+**Install Dependencies**
+
+```bash
+  # Install dependencies
+  pio lib --storage-dir ./lib install bodmer/TFT_eSPI@^2.3.70
+  pio lib --storage-dir ./lib install m5stack/M5Stack
+```
+
+**Build and Flash**
+
+
+
+```bash
+  pio run -e m5stack-core-esp32 -t upload
+```
+
+*Note: For M5Faces I had to modify the library a bit to get it to compile, because I was getting [this error](https://github.com/m5stack/M5EPD/issues/10). It was a simply enough fix, I just commented out any line containing `ADC1_GPIO35_CHANNEL` within [`src/M5EPD.cpp`](https://github.com/m5stack/M5EPD/blob/main/src/M5EPD.cpp)*
+
+

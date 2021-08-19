@@ -5,6 +5,7 @@ rm -f ./bin/uxnasm
 rm -f ./bin/uxnemu
 rm -f ./bin/uxncli
 rm -f ./bin/boot.rom
+rm -f ./bin/screen.rom
 
 # When clang-format is present
 
@@ -30,7 +31,7 @@ else
 	UXNEMU_LDFLAGS="-L/usr/local/lib $(sdl2-config --cflags --libs)"
 fi
 
-if [ "${1}" = '--debug' ]; 
+if [ "${1}" = '--debug' ];
 then
 	echo "[debug]"
 	CFLAGS="${CFLAGS} -DDEBUG -Wpedantic -Wshadow -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -Wvla -g -Og -fsanitize=address -fsanitize=undefined"
@@ -54,9 +55,11 @@ then
 fi
 
 echo "Assembling.."
-./bin/uxnasm projects/examples/demos/life.tal bin/life.rom
+# ./bin/uxnasm projects/examples/demos/life.tal bin/life.rom
+./bin/uxnasm projects/examples/demos/piano.tal bin/boot.rom
+./bin/uxnasm projects/examples/demos/piano.tal data/screen.rom
 
 echo "Running.."
-./bin/uxnemu bin/life.rom
+./bin/uxnemu bin/boot.rom
 
 echo "Done."
