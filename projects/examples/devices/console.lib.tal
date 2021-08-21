@@ -33,9 +33,9 @@ BRK
 @print ( addr* -- )
 	
 	&loop
-		( send ) DUP2 LDA .Console/write DEO
+		( send ) LDAk .Console/write DEO
 		( incr ) #0001 ADD2
-		( loop ) DUP2 LDA ,&loop JCN
+		( loop ) LDAk ,&loop JCN
 	POP2
 
 RTN
@@ -49,7 +49,10 @@ RTN
 	    #0f AND ,&hex JMP
 
 	&hex
-	#30 ADD DUP #39 GTH #27 MUL ADD .Console/write DEO
+	#30 ADD DUP #3a LTH ,&not-alpha JCN
+	#27 ADD
+	&not-alpha
+	.Console/write DEO
 RTN
 
 @print-byte ( byte -- )
@@ -75,7 +78,7 @@ RTN
 RTN
 
 	&digit
-	SWP POP
+	NIP
 	DUP .number/started LDZ ORA #02 JCN
 	POP JMP2r
 	LIT '0 ADD .Console/write DEO

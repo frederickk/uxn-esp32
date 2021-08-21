@@ -1,44 +1,61 @@
-
-#if defined(ARDUINO_M5Stack_Core_ESP32)
-	#include <M5Stack.h>
-	#include <Wire.h>
-#else
-	#include <Arduino.h>
-	#include <TFT_eSPI.h>
-	#include <SPI.h>
+#if defined(ARDUINO_M5STACK_Core2)
+#include <M5Core2.h>
 #endif
+#if defined(ARDUINO_M5Stack_Core_ESP32)
+#include <M5Stack.h>
+#include <Wire.h>
+#endif
+#ifndef ARDUINO_M5Stack_Core_ESP32 || ARDUINO_M5STACK_Core2
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+#include <SPI.h>
+#endif
+
 #if defined(ESP32)
-  #include <SPIFFS.h>
-  #include "arduino-drivers/esp32/audio/audio.h"
+#include <SPIFFS.h>
+#include "arduino-drivers/esp32/audio/audio.h"
 #endif
 
 extern "C" {
-  #include "uxn.h"
-  #include "devices/ppu.h"
-  #include "devices/apu.h"
+#include "uxn.h"
+#include "devices/ppu.h"
+#include "devices/apu.h"
 }
 
 #include "utility.h"
 
-// Config
+// M5Faces Keyboard
+#define KEYBOARD_I2C_ADDR     0x08
+#define KEYBOARD_PIN          5
+#define KEY_UP                0xB7
+#define KEY_DOWN              0xC0
+#define KEY_LEFT              0xBF
+#define KEY_RIGHT             0xC1
+#define KEY_DEL               0x08
+#define KEY_ENTER             0x0D
+#define KEY_ESC               0xAF
+#define KEY_a                 0x61
+#define KEY_z                 0x7a
 
-static char *rom = (char *)"/spiffs/boot.rom";
+#define POLYPHONY 4
+
+// Config
+// static char *rom = (char *)"/spiffs/boot.rom";
+static char *rom = (char *)"/spiffs/orca.rom";
 const int hor = 40;
 const int ver = 30;
 
 #if defined(ARDUINO_M5Stack_Core_ESP32)
-	TFT_eSprite spr = TFT_eSprite(&M5.Lcd);
+TFT_eSprite spr = TFT_eSprite(&M5.Lcd);
 #else
-	// TFT_eSPI tft = TFT_eSPI();
-	// TFT_eSprite spr = TFT_eSprite(&tft);
+TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite spr = TFT_eSprite(&tft);
 #endif
-
-#define POLYPHONY 4
 
 static Uxn *u;
 static Ppu *ppu;
 static Apu *apu[POLYPHONY];
-static Device *devsystem, *devscreen, *devmouse, *devaudio0, *devconsole;
+static Device *devsystem, *devscreen, *devmouse, *devctrl, *devaudio0, *devconsole;
 
 static Uint8 reqdraw = 0;
 
@@ -61,31 +78,39 @@ static Uint8 uxn_font[][8] = { // there is already a variable named "font" in TF
 	{0x00, 0x7c, 0x82, 0x80, 0xf0, 0x80, 0x80, 0x80}
 };
 
-int clamp(int val, int min, int max)
+static int
+clamp(int val, int min, int max)
 {
 	return (val >= min) ? (val <= max) ? val : max : min;
 }
 
-static void quit()
+static void
+quit()
 {
-	#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
-		M5.Lcd.fillScreen(TFT_DARKGREEN);
-	#else
-		// tft.fillScreen(TFT_BLACK);
-	#endif
+#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
+	M5.Lcd.fillScreen(TFT_BLACK);
+#else
+	tft.fillScreen(TFT_BLACK);
+#endif
 
 	while(true) {
 		delay(1000);
   }
 }
 
-static void error(char *msg, const char *err)
+static void
+error(char *msg, char *err)
 {
+#if defined(ARDUINO_M5Stack_Core_ESP32)
+	M5.Lcd.print(strcat(msg, err));
+#else
 	fprintf(stderr, "%s: %s\n", msg, err);
+#endif
 	quit();
 }
 
-static void audio_callback(Sint16 *stream, size_t bytes)
+static void
+audio_callback(Sint16 *stream, size_t bytes)
 {
 	int i;
 	memset(stream, 0, bytes);
@@ -94,7 +119,8 @@ static void audio_callback(Sint16 *stream, size_t bytes)
   }
 }
 
-static void inspect(Ppu *p, Uint8 *stack, Uint8 wptr, Uint8 rptr, Uint8 *memory)
+static void
+inspect(Ppu *p, Uint8 *stack, Uint8 wptr, Uint8 rptr, Uint8 *memory)
 {
 	Uint8 i, x, y, b;
 	for(i = 0; i < 0x20; ++i) { /* stack */
@@ -120,7 +146,8 @@ static void inspect(Ppu *p, Uint8 *stack, Uint8 wptr, Uint8 rptr, Uint8 *memory)
 	}
 }
 
-void redraw(Uxn* u)
+void
+redraw(Uxn* u)
 {
 	if(devsystem->dat[0xe]) {
 		inspect(ppu, u->wst.dat, u->wst.ptr, u->rst.ptr, u->ram.dat);
@@ -129,31 +156,136 @@ void redraw(Uxn* u)
 	reqdraw = 0;
 }
 
-static int uxn_init(void)
+static void
+toggledebug(Uxn* u)
+{
+	devsystem->dat[0xe] = !devsystem->dat[0xe];
+	redraw(u);
+}
+
+static int
+uxn_init(void)
 {
 	if(!ppu_init(ppu, hor, ver)) {
-		error("PPU", "Init failure");
+		error("ppu", "Init failure");
   }
 	#warning uncomment this when audio will be implemented
 	//initaudio(audio_callback);
 
-	#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
-		ppu->pixels = (Uint8*)spr.frameBuffer(1);
-	#else
-		ppu->pixels = (Uint8*)spr.getPointer();
-	#endif
+#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
+	ppu->pixels = (Uint8*)spr.frameBuffer(1);
+#else
+	ppu->pixels = (Uint8*)spr.getPointer();
+#endif
 
 	return 1;
 }
 
-void nil_talk(Device *d, Uint8 b0, Uint8 w)
+void
+domouse()
 {
-	(void)d;
-	(void)b0;
-	(void)w;
+	static bool oldPressed = false;
+	bool pressed;
+	static Uint16 oldX = 0, oldY = 0;
+	Uint16 x = 0, y = 0;
+	Uint8 flag = 0;
+
+#if defined(ARDUINO_M5STACK_Core2)
+	pressed = M5.Touch.ispressed();
+	if(pressed) {
+		TouchPoint_t c = M5.Touch.getPressPoint();
+		if(c.x >= 0 && c.y >= 0) {
+			x = c.x;
+			y = c.y;
+		} else {
+			x = oldX;
+			y = oldY;
+		}
+		printf("(%d, %d)\n", x, y);
+	}
+#endif
+
+	if(pressed) { // Mouse moves
+		x = clamp(x, 0, ppu->width * 8 - 1);
+		y = clamp(y, 0, ppu->height * 8 - 1);
+		mempoke16(devmouse->dat, 0x2, x);
+		mempoke16(devmouse->dat, 0x4, y);
+	}
+
+	if(pressed != oldPressed) { // Mouse clicks
+		flag = 0x01;
+		flag = 0x10; // for the right button, but we don't have it on a touchscreen :(
+		if(pressed)
+			devmouse->dat[6] |= flag;
+		else
+			devmouse->dat[6] &= (~flag);
+	}
+	if(pressed != oldPressed || x != oldX || y != oldY)
+		uxn_eval(u, mempeek16(devmouse->dat, 0));
+
+	oldPressed = pressed;
+	oldX = x;
+	oldY = y;
 }
 
-void system_talk(Device *d, Uint8 b0, Uint8 w)
+static void
+doctrl(Uxn* u, Uint8 key, int z)
+{
+	Uint8 flag = 0x00;
+	devctrl->dat[2] &= 0xf8;
+	// devctrl->dat[2] = 0x00;
+
+	// if(mods & KMOD_SHIFT) devctrl->dat[2] |= 0x04;
+
+#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
+	M5.update();
+	if (M5.BtnA.isPressed()) {
+		devctrl->dat[2] |= 0x01; // CTRL
+	} else if (M5.BtnB.isPressed()) {
+		devctrl->dat[2] |= 0x01; // ALT
+	} else if (M5.BtnC.wasPressed()) {
+		toggledebug(u);
+		// return;
+	}
+#endif
+
+	switch (key) {
+		case KEY_ESC:
+			flag = 0x08;
+			break;
+		case KEY_UP:
+			flag = (1 << 4);
+			break;
+		case KEY_DOWN:
+			flag = (1 << 5);
+			break;
+		case KEY_LEFT:
+			flag = (1 << 6);
+			break;
+		case KEY_RIGHT:
+			flag = (1 << 7);
+			break;
+		case KEY_ENTER:
+			devctrl->dat[3] = 13;
+			break;
+	}
+
+	if(z) {
+		devctrl->dat[2] |= flag;
+		// if(key < 0x20 || key == KEY_DEL)
+			devctrl->dat[3] = key;
+		// else if((M5.BtnA.read() == 1) && key >= KEY_a && key <= KEY_z)
+		// 	devctrl->dat[3] = key - (0x0001|0x0002) * 0x20;
+	} else {
+		// devctrl->dat[2] &= ~flag;
+		devctrl->dat[2] = flag;
+	}
+}
+
+#pragma mark - Devices
+
+static void
+system_talk(Device *d, Uint8 b0, Uint8 w)
 {
 	if(!w) {
 		d->dat[0x2] = d->u->wst.ptr;
@@ -175,21 +307,26 @@ void system_talk(Device *d, Uint8 b0, Uint8 w)
 			pal[i] = spr.color565(r[i], g[i], b[i]);
 		}
 
+#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
 		M5.Lcd.pushImage(0, 0, 8 * hor, 8 * ver, pal);
-		// spr.createPalette(pal);
+#else
+		spr.createPalette(pal);
+#endif
 		reqdraw = 1;
 	} else if(b0 == 0xf) {
 		d->u->ram.ptr = 0x0000;
   }
 }
 
-static void console_talk(Device *d, Uint8 b0, Uint8 w)
+static void
+console_talk(Device *d, Uint8 b0, Uint8 w)
 {
 	if(w && b0 > 0x7)
 		write(b0 - 0x7, (char *)&d->dat[b0], 1);
 }
 
-static void screen_talk(Device *d, Uint8 b0, Uint8 w)
+static void
+screen_talk(Device *d, Uint8 b0, Uint8 w)
 {
 	if(w && b0 == 0xe) {
 		Uint16 x = mempeek16(d->dat, 0x8);
@@ -210,7 +347,29 @@ static void screen_talk(Device *d, Uint8 b0, Uint8 w)
 	}
 }
 
-static void audio_talk(Device *d, Uint8 b0, Uint8 w)
+static void
+file_talk(Device *d, Uint8 b0, Uint8 w)
+{
+	Uint8 read = b0 == 0xd;
+	if(w && (read || b0 == 0xf)) {
+		char *name = (char *)&d->mem[mempeek16(d->dat, 0x8)];
+		Uint16 result = 0, length = mempeek16(d->dat, 0xa);
+		Uint16 offset = mempeek16(d->dat, 0x4);
+		Uint16 addr = mempeek16(d->dat, b0 - 1);
+		FILE *f = fopen(name, read ? "r" : (offset ? "a" : "w"));
+		if(f) {
+			fprintf(stderr, "%s %s %s #%04x, ", read ? "Loading" : "Saving", name, read ? "to" : "from", addr);
+			if(fseek(f, offset, SEEK_SET) != -1)
+				result = read ? fread(&d->mem[addr], 1, length, f) : fwrite(&d->mem[addr], 1, length, f);
+			fprintf(stderr, "%04x bytes\n", result);
+			fclose(f);
+		}
+		mempoke16(d->dat, 0x2, result);
+	}
+}
+
+static void
+audio_talk(Device *d, Uint8 b0, Uint8 w)
 {
 	Apu *c = apu[d - devaudio0];
 	#warning Replace the following line by something else if we cannot open the I2S sound output?
@@ -232,66 +391,27 @@ static void audio_talk(Device *d, Uint8 b0, Uint8 w)
 	}
 }
 
-/*
-void domouse()
+void nil_talk(Device *d, Uint8 b0, Uint8 w)
 {
-	static bool oldPressed = false;
-	bool pressed;
-	static Uint16 oldX = 0, oldY = 0;
-	Uint16 x = 0, y = 0;
-	Uint8 flag = 0;
-
-#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
-	pressed = M5.Touch.ispressed();
-	if(pressed) {
-		TouchPoint_t c = M5.Touch.getPressPoint();
-		if(c.x >= 0 && c.y >= 0) {
-			x = c.x;
-			y = c.y;
-		} else {
-			x = oldX;
-			y = oldY;
-		}
-		printf("(%d, %d)\n", x, y);
-	}
-#else
-#warning domouse() not implemented on this board
-#endif
-
-	if(pressed) { Mouse moves
-		x = clamp(x, 0, ppu->hor * 8 - 1);
-		y = clamp(y, 0, ppu->ver * 8 - 1);
-		mempoke16(devmouse->dat, 0x2, x);
-		mempoke16(devmouse->dat, 0x4, y);
-	}
-
-	if(pressed != oldPressed) { Mouse clicks
-		flag = 0x01;
-		flag = 0x10; for the right button, but we don't have it on a touchscreen :(
-		if(pressed)
-			devmouse->dat[6] |= flag;
-		else
-			devmouse->dat[6] &= (~flag);
-	}
-	if(pressed != oldPressed || x != oldX || y != oldY)
-		evaluxn(u, mempeek16(devmouse->dat, 0));
-
-	oldPressed = pressed;
-	oldX = x;
-	oldY = y;
+	(void)d;
+	(void)b0;
+	(void)w;
 }
-*/
+
+#pragma mark - Generics
 
 static const char *errors[] = {"underflow", "overflow", "division by zero"};
 
-int uxn_halt(Uxn *u, Uint8 error, char *name, int id)
+int
+uxn_halt(Uxn *u, Uint8 error, char *name, int id)
 {
 	fprintf(stderr, "Halted: %s %s#%04x, at 0x%04x\n", name, errors[error - 1], id, u->ram.ptr);
 	u->ram.ptr = 0;
 	return 0;
 }
 
-static void run(Uxn* u)
+static void
+run(Uxn* u)
 {
 	uxn_eval(u, 0x0100);
 	redraw(u);
@@ -299,11 +419,36 @@ static void run(Uxn* u)
 
 	while(true) {
 		start = micros();
-		// domouse();
+
+#if defined(ARDUINO_M5STACK_Core2)
+		domouse();
+		uxn_eval(u, mempeek16(devmouse->dat, 0));
+#else
+#warning domouse() not implemented on this board
+#endif
+
+#if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
+		uint8_t key = 0x00;
+		uint8_t state = 0;
+
+		// TODO(frederickk): Check for presence of keyboard face.
+		if (digitalRead(KEYBOARD_PIN) == LOW) {
+			Wire.requestFrom(KEYBOARD_I2C_ADDR, 1);
+			while (Wire.available()) {
+				key = Wire.read();
+				state = 1;
+			}
+		}
+		doctrl(u, key, state);
+		uxn_eval(u, mempeek16(devctrl->dat, 0));
+		devctrl->dat[3] = 0;
+#else
+#warning doctrl() not implemented on this board
+#endif
+
 
 		uxn_eval(u, mempeek16(devscreen->dat, 0));
-
-		if(reqdraw) {
+		if(reqdraw || devsystem->dat[0xe]) {
 			redraw(u);
 		}
 
@@ -312,7 +457,8 @@ static void run(Uxn* u)
 	}
 }
 
-static int load(Uxn *u, char *filepath)
+static int
+load(Uxn *u, char *filepath)
 {
 	FILE *f;
 	if(!(f = fopen(filepath, "rb"))) {
@@ -323,14 +469,19 @@ static int load(Uxn *u, char *filepath)
 	return 1;
 }
 
- void setup()
- {
+void setup()
+{
  	Serial.begin(115200);
 
 #if defined(ARDUINO_M5Stack_Core_ESP32)
   M5.begin();
   M5.Power.begin();
   M5.Lcd.fillScreen(TFT_BLACK);
+	M5.Lcd.setTextSize(4);
+	M5.Lcd.setTextColor(TFT_BLUE);
+
+	Wire.begin();
+	pinMode(KEYBOARD_PIN, INPUT_PULLUP);
 #else
  	tft.init();
  	tft.setRotation(3);
@@ -362,9 +513,9 @@ static int load(Uxn *u, char *filepath)
  	if(!uxn_boot(u))
  		error("Boot", "Failed to start uxn.");
  	if(!load(u, rom))
- 		error("Load", "Failed");
+ 		error("Load", "Failed to open rom.");
  	if(!uxn_init())
- 		error("Init", "failed");
+ 		error("Init", "Failed to initialize emulator.");
 
  	devsystem = uxn_port(u, 0x0, (char *)"system", system_talk);
  	devconsole = uxn_port(u, 0x1, (char *)"console", console_talk);
@@ -374,9 +525,9 @@ static int load(Uxn *u, char *filepath)
  	uxn_port(u, 0x5, (char *)"audio2", audio_talk);
  	uxn_port(u, 0x6, (char *)"audio3", audio_talk);
  	uxn_port(u, 0x7, (char *)"---", nil_talk);
- 	uxn_port(u, 0x8, (char *)"---", nil_talk);
+	devctrl = uxn_port(u, 0x8, (char *)"controller", nil_talk);
  	devmouse = uxn_port(u, 0x9, (char *)"mouse", nil_talk);
- 	uxn_port(u, 0xa, (char *)"---", nil_talk);
+ 	uxn_port(u, 0xa, (char *)"file", file_talk);
  	uxn_port(u, 0xb, (char *)"---", nil_talk);
  	uxn_port(u, 0xc, (char *)"---", nil_talk);
  	uxn_port(u, 0xd, (char *)"---", nil_talk);
@@ -388,12 +539,13 @@ static int load(Uxn *u, char *filepath)
  	mempoke16(devscreen->dat, 4, ppu->height);
 
 #if defined(ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5Stack_Core_ESP32)
-	M5.Lcd.print("Uxn init in 2 seconds");
+	M5.Lcd.setTextDatum(MC_DATUM);
+	M5.Lcd.drawString("Uxn", ppu->width / 2, ppu->height / 2);
 #else
-	tft.print("Starting Uxn in 2 seconds");
+	tft.print("Uxn");
 #endif
 
- 	delay(2000);
+ 	delay(1000);
 }
 
 void loop()

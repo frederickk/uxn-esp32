@@ -5,7 +5,7 @@ rm -f ./bin/uxnasm
 rm -f ./bin/uxnemu
 rm -f ./bin/uxncli
 rm -f ./bin/boot.rom
-rm -f ./bin/screen.rom
+rm -f ./data/boot.rom
 
 # When clang-format is present
 
@@ -55,11 +55,11 @@ then
 fi
 
 echo "Assembling.."
-# ./bin/uxnasm projects/examples/demos/life.tal bin/life.rom
-./bin/uxnasm projects/examples/demos/piano.tal bin/boot.rom
-./bin/uxnasm projects/examples/demos/piano.tal data/screen.rom
+ROM=projects/examples/devices/controller.tal
+./bin/uxnasm $ROM bin/boot.rom
+./bin/uxnasm $ROM data/boot.rom
 
-echo "Running.."
-./bin/uxnemu bin/boot.rom
+# echo "Running.."
+# ./bin/uxnemu bin/boot.rom
 
 echo "Done."

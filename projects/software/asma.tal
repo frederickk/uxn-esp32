@@ -1,6 +1,6 @@
 ( devices )
 
-|00 @System     [ &vector $2 &wst      $1 &rst    $1 &pad   $4 &r      $2 &g     $2 &b      $2 ]
+|00 @System     [ &vector $2 &wst      $1 &rst    $1 &pad   $4 &r $2 &g $2 &b $2   &debug $1 &halt $1 ]
 |10 @Console    [ &pad    $8 &write    $1 ]
 |a0 @File       [ &vector $2 &success  $2 &offset $2 &pad   $2 &name  $2 &length $2 &load $2 &save $2 ]
 
@@ -223,7 +223,10 @@
 	    #0f AND ,&hex JMP
 
 	&hex
-	#30 ADD DUP #39 GTH #27 MUL ADD .Console/write DEO
+	#30 ADD DUP #3a LTH ,&not-alpha JCN
+	#27 ADD
+	&not-alpha
+	.Console/write DEO
 	JMP2r
 
 (
@@ -249,8 +252,13 @@
 		;asma/state STA
 	#01 ( 0001 )
 	SWPk ( 0001 0100 ) ;asma/written-addr STA2
+	;&preamble-end ;&preamble SUB2k ,asma-assemble-chunk JSR POP2 POP2
 	;asma/line STA2
 	JMP2r
+
+	&preamble
+	"%BRK 20 '{ 20 "00 20 '} 20
+	&preamble-end
 
 (
 	Divide a file up into chunks, and pass each chunk to asma-assemble-chunk.
@@ -370,7 +378,7 @@
 
 	( tree-offset* token-routine-ptr* / end* )
 	STH2r ;asma/token STA2
-	SWP2 POP2 LDA2
+	NIP2 LDA2
 	JMP2 ( tail call )
 
 	&not-found ( tree-offset* dummy* / end* )
@@ -412,7 +420,7 @@
 	LDAk
 	DUP ,&not-end JCN
 	POP POP2
-	STH2r ROT #01 ADD #03 MUL
+	STH2r ROT #01 ADD DUPk ADD ADD
 	JMP2r
 
 	&not-end
@@ -467,6 +475,8 @@
 	LDAkr STHr LIT2r 0001 ADD2r ( 00 byte char / end* )
 	DUP ,&not-end JCN
 	POP POP2r
+	DUP ,&not-zero JCN #80 NIP ( LIT by itself needs keep flag, to distinguish from BRK )
+	&not-zero
 	SWP
 	JMP2r
 
@@ -523,7 +533,7 @@
 	&flush ( ptr* -- start-of-buffer* )
 	;asma-write-buffer SUB2k ( ptr* start* len* )
 	;asma/flush-fn LDA2 JSR2
-	SWP2 POP2 ( start* )
+	NIP2 ( start* )
 	,&after-flush JMP
 
 @asma-output [ &ptr $2 &offset $2 &filename $2 ]
@@ -915,20 +925,20 @@
 	&7d          $2         $2          '} 00          :asma-ignore
 
 @asma-opcodes
-	&BRK        :&AND      :&DEI &_disasm "BRK 00
-	&_entry     :&EQU      :&ROT        "LIT 00
-	&NOP        :&MUL      :&OVR        "NOP 00
+	&_entry     :&GTH      :&ROT &_disasm "LIT 00
+	&INC         $2         $2          "INC 00
 	&POP         $2         $2          "POP 00
-	&DUP        :&DIV      :&EOR        "DUP 00
+	&DUP         $2         $2          "DUP 00
+	&NIP        :&MUL      :&OVR        "NIP 00
 	&SWP         $2         $2          "SWP 00
 	&OVR        :&ORA      :&POP        "OVR 00
-	&ROT        :&NOP      :&STR        "ROT 00
-	&EQU        :&DEO      :&JSR        "EQU 00
+	&ROT        :&NIP      :&STR        "ROT 00
+	&EQU         $2         $2          "EQU 00
 	&NEQ         $2         $2          "NEQ 00
-	&GTH         $2         $2          "GTH 00
+	&GTH        :&DIV      :&JSR        "GTH 00
 	&LTH         $2         $2          "LTH 00
 	&JMP         $2         $2          "JMP 00
-	&JCN        :&GTH      :&JMP        "JCN 00
+	&JCN        :&INC      :&JMP        "JCN 00
 	&JSR        :&JCN      :&LDR        "JSR 00
 	&STH         $2         $2          "STH 00
 	&LDZ         $2         $2          "LDZ 00
@@ -937,15 +947,15 @@
 	&STR        :&STA      :&SUB        "STR 00
 	&LDA         $2         $2          "LDA 00
 	&STA        :&SFT      :&STH        "STA 00
-	&DEI         $2         $2          "DEI 00
-	&DEO        :&BRK      :&DUP        "DEO 00
+	&DEI        :&AND      :&DEO        "DEI 00
+	&DEO         $2         $2          "DEO 00
 	&ADD         $2         $2          "ADD 00
 	&SUB        :&STZ      :&SWP        "SUB 00
 	&MUL        :&LTH      :&NEQ        "MUL 00
-	&DIV         $2         $2          "DIV 00
+	&DIV        :&DEI      :&EOR        "DIV 00
 	&AND        :&ADD       $2          "AND 00
 	&ORA         $2         $2          "ORA 00
-	&EOR         $2         $2          "EOR 00
+	&EOR        :&DUP      :&EQU        "EOR 00
 	&SFT         $2         $2          "SFT 00
 
 (

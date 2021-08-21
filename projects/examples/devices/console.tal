@@ -1,7 +1,7 @@
 ( dev/console )
 
-|0e @System/debug
-|18 @Console/write
+|00 @System $e &debug
+|10 @Console $8 &write
 
 ( init )
 
@@ -10,8 +10,7 @@
 	;hello-word 
 	&while
 		( send ) LDAk .Console/write DEO
-		( incr ) #0001 ADD2
-		( loop ) LDAk ,&while JCN
+		INC2 LDAk ,&while JCN
 	POP2
 	( show debugger ) #01 .System/debug DEO
 

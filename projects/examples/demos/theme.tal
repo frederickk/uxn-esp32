@@ -79,22 +79,22 @@ BRK
 	DUP2 #0010 NEQ2 ,&no-touch-red JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #0060 ADD2 LTH2 ,&no-touch-red JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #009c ADD2 GTH2 ,&no-touch-red JCN
-		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// SWP POP ;theme/r1 #00 .selection LDZ ADD2 STA
+		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// NIP ;theme/r1 #00 .selection LDZ ADD2 STA
 	&no-touch-red
 	DUP2 #0020 NEQ2 ,&no-touch-green JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #0060 ADD2 LTH2 ,&no-touch-green JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #009c ADD2 GTH2 ,&no-touch-green JCN
-		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// SWP POP ;theme/g1 #00 .selection LDZ ADD2 STA
+		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// NIP ;theme/g1 #00 .selection LDZ ADD2 STA
 	&no-touch-green
 	DUP2 #0030 NEQ2 ,&no-touch-blue JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #0060 ADD2 LTH2 ,&no-touch-blue JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #009c ADD2 GTH2 ,&no-touch-blue JCN
-		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// SWP POP ;theme/b1 #00 .selection LDZ ADD2 STA
+		( get new value ) .Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0060 SUB2 4// NIP ;theme/b1 #00 .selection LDZ ADD2 STA
 	&no-touch-blue
 	DUP2 #0040 NEQ2 ,&no-touch-radio JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #0050 ADD2 LTH2 ,&no-touch-radio JCN
 		.Mouse/x DEI2 .window/x1 LDZ2 #008c ADD2 GTH2 ,&no-touch-radio JCN
-		.Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0050 SUB2 STEP8 2// #0008 DIV2 SWP POP .selection STZ
+		.Mouse/x DEI2 .window/x1 LDZ2 SUB2 #0050 SUB2 STEP8 2// #0008 DIV2 NIP .selection STZ
 	&no-touch-radio
 	POP2
 
@@ -147,7 +147,7 @@ RTN
 	#0010 .Screen/y DEO2
 	#00 #08
 	&draw-pixel1
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR .Screen/pixel DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-pixel1 JCN
@@ -155,7 +155,7 @@ RTN
 	#0018 .Screen/y DEO2
 	#00 #08
 	&draw-pixel2
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR #08 ADD .Screen/pixel DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-pixel2 JCN
@@ -163,7 +163,7 @@ RTN
 	#0020 .Screen/y DEO2
 	#00 #08
 	&draw-icn1
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR #00 ADD .Screen/sprite DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-icn1 JCN
@@ -171,7 +171,7 @@ RTN
 	#0028 .Screen/y DEO2
 	#00 #08
 	&draw-icn2
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR #08 ADD .Screen/sprite DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-icn2 JCN
@@ -179,7 +179,7 @@ RTN
 	#0030 .Screen/y DEO2
 	#00 #08
 	&draw-chr1
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR #80 ADD .Screen/sprite DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-chr1 JCN
@@ -187,7 +187,7 @@ RTN
 	#0038 .Screen/y DEO2
 	#00 #08
 	&draw-chr2
-		( move ) OVR #08 MUL #00 SWP #0010 ADD2 .Screen/x DEO2
+		( move ) OVR #30 SFT #00 SWP #0010 ADD2 .Screen/x DEO2
 		( draw ) OVR #88 ADD .Screen/sprite DEO
 		( incr ) SWP #01 ADD SWP
 		LTHk ,&draw-chr2 JCN
@@ -253,7 +253,7 @@ RTN
 	.Mouse/x DEI2 DUP2 .pointer/x STZ2 .Screen/x DEO2 
 	.Mouse/y DEI2 DUP2 .pointer/y STZ2 .Screen/y DEO2
 
-	#43 .Mouse/state DEI #00 NEQ #02 MUL SUB .Screen/sprite DEO
+	#43 .Mouse/state DEI #00 NEQ DUP ADD SUB .Screen/sprite DEO
 
 RTN
 
@@ -327,12 +327,12 @@ RTN
 	.Screen/x DEO2 
 	STH2r
 	&loop
-		DUP2 LDA #00 SWP 8**
+		LDAk #00 SWP 8**
 		;font ADD2 .Screen/addr DEO2 
 		( draw ) STHkr .Screen/sprite DEO
 		( incr ) ++
 		( incr ) .Screen/x DEI2 8+ .Screen/x DEO2
-		DUP2 LDA ,&loop JCN
+		LDAk ,&loop JCN
 	POP2 POPr
 
 RTN

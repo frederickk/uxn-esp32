@@ -261,7 +261,7 @@ JMP2r
 		#ff
 		JMP2r
 	&found
-		SWP POP ( remove loop limit )
+		NIP ( remove loop limit )
 		DUP ;&src_i LDA NEQ ,&end JCN ( check if result is the same as index )
 		POP #ff
 		JMP2r
@@ -436,7 +436,7 @@ JMP2r
 JMP2r
 
 @draw_c ( draw character  )
-	#00 ;c_state LDA get_nibble_h #08 MUL
+	#00 ;c_state LDA get_nibble_h #30 SFT
 	;c_sprite LDA2 ADD2 .Screen/addr DEO2
 	;c_pos/x out_screen_x
 	;c_pos/y out_screen_y

@@ -92,24 +92,32 @@ Find us in `#uxn`, on irc.esper.net
 ---
 ## Flashing ESP32 Hardware
 
-Before building and flashing be sure to install dependencies.
+Compile and flash ESP32 hardware using [platformio](https://platformio.org/).
 
-**Install Dependencies**
+The steps to compile a `.tal` (e.g. run `build.sh`) into a ROM, flash firmware, and flash ROM, are easily done by executing `flash.sh` with the appropriate environment flag.
 
-```bash
-  # Install dependencies
-  pio lib --storage-dir ./lib install bodmer/TFT_eSPI@^2.3.70
-  pio lib --storage-dir ./lib install m5stack/M5Stack
-```
+| Board              | Command                         |
+|--------------------|---------------------------------|
+| ESP WROVER Kit     | `./flash.sh esp-wrover-kit`     |
+| M5Stack Core ESP32 | `./flash.sh m5stack-core-esp32` |
 
-**Build and Flash**
+Otherwise, you can run the tasks individually.
+
+**ESP WROVER Kit**
+
+| Task       | Command                                     |
+|------------|---------------------------------------------|
+| Compile    | `pio run -e esp-wrover-kit`                 |
+| Flash      | `pio run -e esp-wrover-kit -t upload`       |
+| Flash ROM  | `pio run -e esp-wrover-kit -t uploadfs`     |
 
 
+**M5Stack and M5Core ESP32**
 
-```bash
-  pio run -e m5stack-core-esp32 -t upload
-```
-
-*Note: For M5Faces I had to modify the library a bit to get it to compile, because I was getting [this error](https://github.com/m5stack/M5EPD/issues/10). It was a simply enough fix, I just commented out any line containing `ADC1_GPIO35_CHANNEL` within [`src/M5EPD.cpp`](https://github.com/m5stack/M5EPD/blob/main/src/M5EPD.cpp)*
+| Task       | Command                                     |
+|------------|---------------------------------------------|
+| Compile    | `pio run -e m5stack-core-esp32`             |
+| Flash      | `pio run -e m5stack-core-esp32 -t upload`   |
+| Flash ROM  | `pio run -e m5stack-core-esp32 -t uploadfs` |
 
 

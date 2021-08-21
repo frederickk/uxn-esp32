@@ -3,6 +3,7 @@
 %RTN { JMP2r }
 %2// { #01 SFT2 }
 %4// { #02 SFT2 }
+%!~ { NEQk NIP }
 
 ( devices )
 
@@ -28,7 +29,7 @@
 
 	( find center )
 	.Screen/width DEI2 2// #0008 SUB2 .cat/x STZ2
-	.Screen/height DEI2 4// #0003 MUL2 #0018 SUB2 .cat/y STZ2
+	.Screen/height DEI2 4// DUP2k ADD2 ADD2 #0018 SUB2 .cat/y STZ2
 
 	( vectors )
 	;on-mouse .Mouse/vector DEO2
@@ -43,21 +44,21 @@ BRK
 	
 	;draw-cursor JSR2
 
-	.Mouse/x DEI2 .cat/x LDZ2 GTH2 #20 MUL
-	.Mouse/y DEI2 .cat/y LDZ2 GTH2 #40 MUL
+	.Mouse/x DEI2 .cat/x LDZ2 GTH2 #50 SFT
+	.Mouse/y DEI2 .cat/y LDZ2 GTH2 #60 SFT
 		ADD #00 SWP ;draw-eye JSR2
 
 BRK
 
 @on-frame ( -> )
 
-	.cat/timer LDZ #01 ADD [ DUP ] .cat/timer STZ
+	.cat/timer LDZ INC [ DUP ] .cat/timer STZ
 		DUP ,&skip0 JCN #0000 ;draw-tail JSR2 &skip0
-		DUP #10 NEQ ,&skip1 JCN #0001 ;draw-tail JSR2 &skip1
-		DUP #20 NEQ ,&skip2 JCN #0002 ;draw-tail JSR2 &skip2
-		DUP #30 NEQ ,&skip3 JCN #0003 ;draw-tail JSR2 &skip3
-		DUP #40 NEQ ,&skip4 JCN #0002 ;draw-tail JSR2 &skip4
-		DUP #50 NEQ ,&skip5 JCN #0001 ;draw-tail JSR2 &skip5
+		[ #10 ] !~ ,&skip1 JCN #0001 ;draw-tail JSR2 &skip1
+		[ #20 ] !~ ,&skip2 JCN #0002 ;draw-tail JSR2 &skip2
+		[ #30 ] !~ ,&skip3 JCN #0003 ;draw-tail JSR2 &skip3
+		[ #40 ] !~ ,&skip4 JCN #0002 ;draw-tail JSR2 &skip4
+		[ #50 ] !~ ,&skip5 JCN #0001 ;draw-tail JSR2 &skip5
 	POP
 
 BRK
@@ -97,7 +98,7 @@ RTN
 	;body .Screen/addr DEO2
 	( draw ) #81 .Screen/sprite DEO
 	STH2r .Screen/x DEO2
-	#0010 MUL2 ;body #0010 ADD2 ADD2 .Screen/addr DEO2
+	#40 SFT2 ;body #0010 ADD2 ADD2 .Screen/addr DEO2
 	( draw ) #81 .Screen/sprite DEO
 
 RTN
@@ -125,13 +126,13 @@ RTN
 	.cat/x LDZ2 #0010 SUB2 .Screen/x DEO2
 	;ground .Screen/addr DEO2
 
-	#00 #10
+	#10 #00 
 	&loop
 		( draw ) #01 .Screen/sprite DEO
 		( sety ) .Screen/addr DEI2 #0008 ADD2 .Screen/addr DEO2
 		( setx ) .Screen/x DEI2 #0008 ADD2 .Screen/x DEO2
-		( incr ) SWP #01 ADD SWP
-		LTHk ,&loop JCN
+		( incr ) INC
+		GTHk ,&loop JCN
 	POP2
 
 RTN

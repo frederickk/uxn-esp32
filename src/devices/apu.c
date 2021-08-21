@@ -49,7 +49,7 @@ apu_render(Apu *c, Sint16 *sample, Sint16 *end)
 		if(c->i >= c->len) {
 			if(!c->repeat) {
 				c->advance = 0;
-				return 1;
+				break;
 			}
 			c->i %= c->len;
 		}
@@ -57,6 +57,7 @@ apu_render(Apu *c, Sint16 *sample, Sint16 *end)
 		*sample++ += s * c->volume[0] / 0x180;
 		*sample++ += s * c->volume[1] / 0x180;
 	}
+	if(!c->advance) apu_finished_handler(c);
 	return 1;
 }
 
@@ -85,10 +86,11 @@ Uint8
 apu_get_vu(Apu *c)
 {
 	int i;
-	Sint32 sum[2];
+	Sint32 sum[2] = {0, 0};
 	if(!c->advance || !c->period) return 0;
 	for(i = 0; i < 2; ++i) {
-		sum[i] = envelope(c, c->age) * c->volume[i] / 0x800;
+		if(!c->volume[i]) continue;
+		sum[i] = 1 + envelope(c, c->age) * c->volume[i] / 0x800;
 		if(sum[i] > 0xf) sum[i] = 0xf;
 	}
 	return (sum[0] << 4) | sum[1];

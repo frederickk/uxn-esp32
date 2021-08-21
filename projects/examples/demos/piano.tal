@@ -4,19 +4,17 @@
 %<  { LTH } %>   { GTH }  %=  { EQU } %!   { NEQ }
 %++ { ADD2 } %-- { SUB2 } %** { MUL2 } %// { DIV2 }
 %<< { LTH2 } %>> { GTH2 } %== { EQU2 } %!! { NEQ2 }
+%!~ { NEQk NIP }
 
 %RTN  { JMP2r }
-%TOS  { #00 SWP } %TOB { SWP POP }
+%TOS  { #00 SWP }
 %MOD  { DUP2 / * - }
-%LTS2 { #8000 ++ SWP2 #8000 ++ >> }
 %GTS2 { #8000 ++ SWP2 #8000 ++ << }
-%INCR { SWP #01 + SWP }
+%2/  { #01 SFT }
 %2//  { #01 SFT2 }
 %4//  { #02 SFT2 }
 %8//  { #03 SFT2 }
 %8**  { #30 SFT2 }
-
-%BREAKPOINT { #0101 #0e DEO2 }
 
 ( devices )
 
@@ -97,15 +95,14 @@ BRK
 	
 	.adsr-view/y2 LDZ2 #0020 -- .Screen/y DEO2
 
-	#00 #10
+	#10 #00 
 	&loop
 		.adsr-view/x2 LDZ2 #003a -- .Screen/x DEO2
-		OVR #10 SWP - .Audio0/output DEI #0f AND < .Screen/pixel DEO
+		#10 OVR - .Audio0/output DEI #0f AND < .Screen/pixel DEO
 		.adsr-view/x2 LDZ2 #003a -- #0002 ++ .Screen/x DEO2
-		OVR #10 SWP - .Audio0/output DEI #04 SFT < .Screen/pixel DEO
+		#10 OVR - .Audio0/output DEI #04 SFT < .Screen/pixel DEO
 		.Screen/y DEI2 #0002 ++ .Screen/y DEO2
-		( incr ) INCR
-		LTHk ,&loop JCN
+		INC GTHk ,&loop JCN
 	POP2
 
 BRK
@@ -118,25 +115,22 @@ BRK
 	#40 .Screen/sprite DEO
 
 	.Controller/key DEI
-	DUP #61 ! ,&no-c JCN
+	[ LIT 'a ] !~ ,&no-c JCN
 		#30 .octave LDZ #0c * + ;play JSR2 &no-c
-	DUP #73 ! ,&no-d JCN
+	[ LIT 's ] !~ ,&no-d JCN
 		#32 .octave LDZ #0c * + ;play JSR2 &no-d
-	DUP #64 ! ,&no-e JCN
+	[ LIT 'd ] !~ ,&no-e JCN
 		#34 .octave LDZ #0c * + ;play JSR2 &no-e
-	DUP #66 ! ,&no-f JCN
+	[ LIT 'f ] !~ ,&no-f JCN
 		#35 .octave LDZ #0c * + ;play JSR2 &no-f
-	DUP #67 ! ,&no-g JCN
+	[ LIT 'g ] !~ ,&no-g JCN
 		#37 .octave LDZ #0c * + ;play JSR2 &no-g
-	DUP #68 ! ,&no-a JCN
+	[ LIT 'h ] !~ ,&no-a JCN
 		#39 .octave LDZ #0c * + ;play JSR2 &no-a
-	DUP #6a ! ,&no-b JCN
+	[ LIT 'j ] !~ ,&no-b JCN
 		#3b .octave LDZ #0c * + ;play JSR2 &no-b
-	DUP #6b ! ,&no-c2 JCN
+	[ LIT 'k ] !~ ,&no-c2 JCN
 		#3c .octave LDZ #0c * + ;play JSR2 &no-c2
-	DUP #1b ! ,&no-esc JCN
-		BREAKPOINT
-		&no-esc
 	POP
 
 	( release )
@@ -146,7 +140,7 @@ BRK
 	DUP #04 SFT #01 AND #01 ! ,&no-up JCN
 		( move ) .Audio0/addr DEI2 #0001 -- .Audio0/addr DEO2 &no-up
 	DUP #05 SFT #01 AND #01 ! ,&no-down JCN
-		( move ) .Audio0/addr DEI2 #0001 ++ .Audio0/addr DEO2 &no-down
+		( move ) .Audio0/addr DEI2 INC2 .Audio0/addr DEO2 &no-down
 	DUP #06 SFT #01 AND #01 ! ,&no-left JCN
 		( move ) .Audio0/addr DEI2 #0010 -- .Audio0/addr DEO2 &no-left
 	DUP #07 SFT #01 AND #01 ! ,&no-right JCN
@@ -190,12 +184,12 @@ BRK
 
 @on-touch-octave-view ( -> )
 
-	.Mouse/x DEI2 .octave-view/x1 LDZ2 -- 8// TOB #09 ! ,&no-mod JCN
-		.Mouse/y DEI2 .octave-view/y1 LDZ2 -- 8// TOB 
-		DUP #00 ! ,&no-incr JCN
+	.Mouse/x DEI2 .octave-view/x1 LDZ2 -- 8// NIP #09 ! ,&no-mod JCN
+		.Mouse/y DEI2 .octave-view/y1 LDZ2 -- 8// NIP 
+		[ #00 ] !~ ,&no-incr JCN
 			.octave LDZ #03 = ,&no-incr JCN
-			.octave LDZ #01 + .octave STZ &no-incr
-		DUP #02 ! ,&no-decr JCN
+			.octave LDZ INC .octave STZ &no-incr
+		[ #02 ] !~ ,&no-decr JCN
 			.octave LDZ #ff = ,&no-decr JCN
 			.octave LDZ #01 - .octave STZ &no-decr
 		POP
@@ -204,7 +198,7 @@ BRK
 		BRK
 	&no-mod
 
-	.Mouse/x DEI2 .octave-view/x1 LDZ2 -- 8// TOB #06 > ,&no-key JCN
+	.Mouse/x DEI2 .octave-view/x1 LDZ2 -- 8// NIP #06 > ,&no-key JCN
 		.Mouse/x DEI2 .octave-view/x1 LDZ2 -- 8// ;notes ++ LDA .octave LDZ #0c * + ;play JSR2
 		( release ) #00 .Mouse/state DEO
 		;draw-octave JSR2
@@ -214,28 +208,28 @@ BRK
 
 @on-touch-adsr-view ( -> )
 
-	.Mouse/x DEI2 .adsr-view/x1 LDZ2 -- 8// TOB #03 /
-	DUP #00 ! ,&no-a JCN
+	.Mouse/x DEI2 .adsr-view/x1 LDZ2 -- 8// NIP #03 /
+	[ #00 ] !~ ,&no-a JCN
 		.Audio0/adsr DEI
 		#10 .Mouse/state DEI #10 = #e0 * + +
 		.Audio0/adsr DEO &no-a
-	DUP #01 ! ,&no-d JCN
+	[ #01 ] !~ ,&no-d JCN
 		.Audio0/adsr DEI
 		DUP #f0 AND STH #01 .Mouse/state DEI #10 = #0e * + + #0f AND STHr +
 		.Audio0/adsr DEO &no-d
-	DUP #02 ! ,&no-s JCN
-		.Audio0/adsr #01 + DEI
+	[ #02 ] !~ ,&no-s JCN
+		.Audio0/adsr INC DEI
 		#10 .Mouse/state DEI #10 = #e0 * + +
-		.Audio0/adsr #01 + DEO &no-s
-	DUP #03 ! ,&no-r JCN
-		.Audio0/adsr #01 + DEI
+		.Audio0/adsr INC DEO &no-s
+	[ #03 ] !~ ,&no-r JCN
+		.Audio0/adsr INC DEI
 		DUP #f0 AND STH #01 .Mouse/state DEI #10 = #0e * + + #0f AND STHr +
-		.Audio0/adsr #01 + DEO &no-r
-	DUP #05 ! ,&no-left JCN
+		.Audio0/adsr INC DEO &no-r
+	[ #05 ] !~ ,&no-left JCN
 		.Audio0/volume DEI 
 		#10 .Mouse/state DEI #10 = #e0 * + +
 		.Audio0/volume DEO &no-left
-	DUP #06 ! ,&no-right JCN
+	[ #06 ] !~ ,&no-right JCN
 		.Audio0/volume DEI
 		DUP #f0 AND STH #01 .Mouse/state DEI #10 = #0e * + + #0f AND STHr +
 		.Audio0/volume DEO &no-right
@@ -273,13 +267,13 @@ RTN
 	
 	.octave-view/x1 LDZ2 .octave-view/y1 LDZ2
 
-	OVR2 OVR2 ;keys-left-icns #01 .last-note LDZ #00 = + ;draw-key JSR2
-	OVR2 #0008 ++ OVR2 ;keys-middle-icns #01 .last-note LDZ #02 = + ;draw-key JSR2
-	OVR2 #0010 ++ OVR2 ;keys-right-icns #01 .last-note LDZ #04 = + ;draw-key JSR2
-	OVR2 #0018 ++ OVR2 ;keys-left-icns #01 .last-note LDZ #05 = + ;draw-key JSR2
-	OVR2 #0020 ++ OVR2 ;keys-middle-icns #01 .last-note LDZ #07 = + ;draw-key JSR2
-	OVR2 #0028 ++ OVR2 ;keys-middle-icns #01 .last-note LDZ #09 = + ;draw-key JSR2
-	SWP2 #0030 ++ SWP2 ;keys-right-icns #01 .last-note LDZ #0b = + ;draw-key JSR2
+	OVR2 OVR2 ;keys-left-icns .last-note LDZ #00 = INC ;draw-key JSR2
+	OVR2 #0008 ++ OVR2 ;keys-middle-icns .last-note LDZ #02 = INC ;draw-key JSR2
+	OVR2 #0010 ++ OVR2 ;keys-right-icns .last-note LDZ #04 = INC ;draw-key JSR2
+	OVR2 #0018 ++ OVR2 ;keys-left-icns .last-note LDZ #05 = INC ;draw-key JSR2
+	OVR2 #0020 ++ OVR2 ;keys-middle-icns .last-note LDZ #07 = INC ;draw-key JSR2
+	OVR2 #0028 ++ OVR2 ;keys-middle-icns .last-note LDZ #09 = INC ;draw-key JSR2
+	SWP2 #0030 ++ SWP2 ;keys-right-icns .last-note LDZ #0b = INC ;draw-key JSR2
 
 	.octave-view/x1 LDZ2 #0048 ++ .Screen/x DEO2
 
@@ -302,13 +296,12 @@ RTN
 	STH
 	.Screen/addr DEO2 
 	SWP2 .Screen/x DEO2
-	DUP2 #0018 ++
+	DUP2 #0018 ++ SWP2
 	&loop
-		( move ) OVR2 .Screen/y DEO2
+		( move ) DUP2 .Screen/y DEO2
 		( draw ) STHkr .Screen/sprite DEO
 		( incr ) .Screen/addr DEI2 #0008 ++ .Screen/addr DEO2  
-		( incr ) SWP2 #0008 ++ SWP2
-		LTH2k ,&loop JCN
+		#0008 ++ GTH2k ,&loop JCN
 	POP2 POP2 
 	POPr
 
@@ -324,10 +317,10 @@ RTN
 		.Audio0/adsr DEI #0f AND
 		;draw-knob JSR2
 	.adsr-view/x1 LDZ2 #0030 ++ .adsr-view/y1 LDZ2
-		.Audio0/adsr #01 + DEI #04 SFT
+		.Audio0/adsr INC DEI #04 SFT
 		;draw-knob JSR2
 	.adsr-view/x1 LDZ2 #0048 ++ .adsr-view/y1 LDZ2
-		.Audio0/adsr #01 + DEI #0f AND
+		.Audio0/adsr INC DEI #0f AND
 		;draw-knob JSR2
 	( volume )
 	.adsr-view/x2 LDZ2 #0028 -- .adsr-view/y1 LDZ2
@@ -344,7 +337,7 @@ RTN
 	( clear )
 	.wave-view/x1 LDZ2
 	.wave-view/y1 LDZ2
-	.wave-view/x2 LDZ2 #0001 ++
+	.wave-view/x2 LDZ2 INC2
 	.wave-view/y2 LDZ2
 	#00 ;fill-rect JSR2
 
@@ -353,22 +346,21 @@ RTN
 	.wave-view/x1 LDZ2 .Screen/x DEO2
 
 	( waveform )
-	#00 #ff
+	#ff #00 
 	&loop
 		( dotted line )
-		OVR #01 AND ,&no-dot JCN 
+		DUP #01 AND ,&no-dot JCN 
 			.wave-view/y1 LDZ2 #0010 ++ .Screen/y DEO2
 			#03 .Screen/pixel DEO
 		&no-dot
-		OVR TOS .Audio0/addr DEI2 ++ LDA 
-		#02 /
+		DUP TOS .Audio0/addr DEI2 ++ LDA 
+		2/
 		TOS 4// .wave-view/y1 LDZ2 ++ .Screen/y DEO2
-		.Screen/x DEI2 #0001 ++ .Screen/x DEO2
-		( draw ) OVR 
-			.Audio0/length DEI2 TOB > 
-			.Audio0/length DEI2 #0100 !! #0101 == #02 * #01 + .Screen/pixel DEO
-		( incr ) INCR
-		LTHk ,&loop JCN
+		.Screen/x DEI2 INC2 .Screen/x DEO2
+		( draw ) DUP 
+			.Audio0/length DEI2 NIP > 
+			.Audio0/length DEI2 #0100 !! #0101 == DUP ADD INC .Screen/pixel DEO
+		INC GTHk ,&loop JCN
 	POP2
 
 	( range )
@@ -384,12 +376,11 @@ RTN
 	
 	STH
 	.wave-view/x1 LDZ2 .Audio0/length DEI2 ++ .Screen/x DEO2
-	.wave-view/y1 LDZ2 DUP2 #0020 ++
+	.wave-view/y1 LDZ2 DUP2 #0020 ++ SWP2
 	&loop
-		OVR2 .Screen/y DEO2
+		DUP2 .Screen/y DEO2
 		( draw ) STHkr .Screen/pixel DEO
-		( incr ) SWP2 #0001 ++ SWP2
-		LTH2k ,&loop JCN
+		INC2 GTH2k ,&loop JCN
 	POP2 POP2
 	POPr
 
@@ -399,24 +390,24 @@ RTN
 
 	( load ) STH .Screen/y DEO2  .Screen/x DEO2
 	;knob-icns .Screen/addr DEO2 
-	( draw ) #01 .Screen/sprite DEO
+		( draw ) #01 .Screen/sprite DEO
 	.Screen/x DEI2 #0008 ++ .Screen/x DEO2 
 	;knob-icns #0008 ++ .Screen/addr DEO2 
-	( draw ) #01 .Screen/sprite DEO
+		( draw ) #01 .Screen/sprite DEO
 	.Screen/y DEI2 #0008 ++ .Screen/y DEO2 
 	;knob-icns #0018 ++ .Screen/addr DEO2 
-	( draw ) #01 .Screen/sprite DEO
+		( draw ) #01 .Screen/sprite DEO
 	.Screen/x DEI2 #0008 -- .Screen/x DEO2 
 	;knob-icns #0010 ++ .Screen/addr DEO2 
-	( draw ) #01 .Screen/sprite DEO
+		( draw ) #01 .Screen/sprite DEO
 	.Screen/x DEI2 #0004 ++ .Screen/x DEO2
 	.Screen/y DEI2 #0008 ++ .Screen/y DEO2
-	;font-hex #00 STHkr #08 * ++ .Screen/addr DEO2
-	( draw ) #01 .Screen/sprite DEO
+	;font-hex #00 STHkr #30 SFT ++ .Screen/addr DEO2
+		( draw ) #01 .Screen/sprite DEO
 	.Screen/x DEI2 #0004 -- #00 #00 STHkr ;knob-offsetx ++ LDA ++ .Screen/x DEO2
 	.Screen/y DEI2 #0010 -- #00 #00 STHr ;knob-offsety ++ LDA ++ .Screen/y DEO2
 	;knob-icns #0020 ++ .Screen/addr DEO2
-	( draw ) #05 .Screen/sprite DEO
+		( draw ) #05 .Screen/sprite DEO
 
 RTN
 
@@ -424,37 +415,38 @@ RTN
 
 	STH SWP 
 	DUP #04 SFT TOS 8** ;font-hex ++ .Screen/addr DEO2
-	( draw ) STHkr .Screen/sprite DEO
+		( draw ) STHkr .Screen/sprite DEO
 	#0f AND TOS 8** ;font-hex ++ .Screen/addr DEO2
 	.Screen/x DEI2 #0008 ++ .Screen/x DEO2
-	( draw ) STHkr .Screen/sprite DEO
+		( draw ) STHkr .Screen/sprite DEO
 	DUP #04 SFT TOS 8** ;font-hex ++ .Screen/addr DEO2
 	.Screen/x DEI2 #0008 ++ .Screen/x DEO2
-	( draw ) STHkr .Screen/sprite DEO
+		( draw ) STHkr .Screen/sprite DEO
 	#0f AND TOS 8** ;font-hex ++ .Screen/addr DEO2
 	.Screen/x DEI2 #0008 ++ .Screen/x DEO2
-	( draw ) STHr .Screen/sprite DEO
+		( draw ) STHr .Screen/sprite DEO
 
 RTN
 
 @fill-rect ( x1* y1* x2* y2* color -- )
 	
-	.color STZ
-	( x1 x2 y1 y2 ) ROT2 SWP2
+	,&color STR
+	( x1 x2 y1 y2 ) ROT2
 	&ver
-		( save ) OVR2 .Screen/y DEO2
-		STH2 STH2 OVR2 OVR2
+		( save ) DUP2 .Screen/y DEO2
+		STH2 STH2 OVR2 OVR2 SWP2
 		&hor
-			( save ) OVR2 .Screen/x DEO2
-			( draw ) .color LDZ .Screen/pixel DEO
-			( incr ) SWP2 #0001 ++ SWP2
-			OVR2 OVR2 LTS2 ,&hor JCN
+			( save ) DUP2 .Screen/x DEO2
+			( draw ) ,&color LDR .Screen/pixel DEO
+			( incr ) INC2
+			OVR2 OVR2 GTS2 ,&hor JCN
 		POP2 POP2 STH2r STH2r
-		( incr ) SWP2 #0001 ++ SWP2
-		OVR2 OVR2 LTS2 ,&ver JCN
+		( incr ) INC2
+		OVR2 OVR2 GTS2 ,&ver JCN
 	POP2 POP2 POP2 POP2
 
 RTN
+	&color $1
 
 @within-rect ( x* y* rect -- flag )
 	
