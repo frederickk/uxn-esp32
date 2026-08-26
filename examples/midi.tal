@@ -1,0 +1,57 @@
+( dev/midi test - cycles through a short melody over BLE MIDI )
+
+%RTN { JMP2r }
+%20MOD { #1f AND }
+%GET-NOTE { #00 SWP ;melody ADD2 LDA }
+
+|00 @System     [ &vector $2 &pad $6 &r $2 &g $2 &b $2 ]
+|20 @Screen     [ &vector $2 &width $2 &height $2 &pad $2 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1 ]
+|c0 @Midi       [ &vector $2 &channel $1 &note $1 &pad $b &velocity $1 ]
+
+( variables )
+
+|0000
+
+@timer    $1
+@progress $1
+@playing  $1
+
+|0100 ( -> )
+
+	( theme )
+	#0f8f .System/r DEO2
+	#0f8f .System/g DEO2
+	#0f80 .System/b DEO2
+
+	( vectors )
+	;on-frame .Screen/vector DEO2
+
+	( setup midi )
+	#00 .Midi/channel DEO
+
+BRK
+
+@on-frame ( -> )
+
+	( incr ) .timer LDZ INC .timer STZ
+	( skip ) .timer LDZ #10 EQU #01 JCN [ BRK ]
+	#00 .timer STZ
+
+	.playing LDZ #01 EQU ,&note-off JCN
+		.progress LDZ GET-NOTE .Midi/note DEO
+		#7f .Midi/velocity DEO
+		#01 .playing STZ
+		BRK
+	&note-off
+		.progress LDZ GET-NOTE .Midi/note DEO
+		#00 .Midi/velocity DEO
+		#00 .playing STZ
+		.progress LDZ INC 20MOD .progress STZ
+
+BRK
+
+@melody
+	54 52 54 4f 4b 4f 48 4f
+	54 52 54 4f 4b 4f 48 4f
+	54 56 57 56 57 54 56 54
+	56 52 54 52 54 50 54 4f

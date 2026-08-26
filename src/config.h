@@ -27,4 +27,12 @@
 #define USE_NIL_MOUSE
 /*****************************/
 
+/********** devaudio *********/
+#define USE_M5STACK_CORE_SPEAKER
+/*****************************/
+
+/********** devmidi **********/
+#define USE_M5STACK_BLE_MIDI
+/*****************************/
+
 #endif
