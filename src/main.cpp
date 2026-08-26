@@ -12,7 +12,7 @@ extern "C" {
 const char* ntp_server = "pool.ntp.org";
 const long gmt_offset_sec = 3600;
 const int daylight_offset_sec = 3600;
-static char *rom = "/spiffs/controller.rom";
+static char *rom = "/spiffs/orca.rom";
 /*****************************/
 
 #ifdef USE_WIFI
