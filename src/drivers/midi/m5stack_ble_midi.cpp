@@ -1,6 +1,3 @@
-#include "config.h"
-#ifdef USE_M5STACK_BLE_MIDI
-
 #include <Arduino.h>
 #include <BLEMidi.h>
 
@@ -23,5 +20,3 @@ midi_ble_note_off(uint8_t channel, uint8_t note, uint8_t velocity)
 	if(BLEMidiServer.isConnected())
 		BLEMidiServer.noteOff(channel, note, velocity);
 }
-
-#endif

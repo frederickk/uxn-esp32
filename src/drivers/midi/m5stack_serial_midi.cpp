@@ -1,6 +1,3 @@
-#include "config.h"
-#ifdef USE_M5STACK_SERIAL_MIDI
-
 #include <Arduino.h>
 
 /* Sends raw MIDI 1.0 bytes over UART2 to an external ATmega32U4 board     */
@@ -42,5 +39,3 @@ midi_serial_note_off(uint8_t channel, uint8_t note, uint8_t velocity)
 {
 	send_message(0x80 | (channel & 0x0f), note, velocity);
 }
-
-#endif
