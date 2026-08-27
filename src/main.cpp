@@ -14,6 +14,11 @@ const char* ntp_server = "pool.ntp.org";
 const long gmt_offset_sec = 3600;
 const int daylight_offset_sec = 3600;
 static char *rom = "/spiffs/orca.rom";
+/* Typed into the console device on boot, exactly like a second argv     */
+/* entry to uxncli/uxnemu (see uxn/src/uxncli.c's main()) -- ROMs like   */
+/* Orca that accept a file to open on the command line read it this way */
+/* rather than via any device or keyboard shortcut. Leave "" to skip.    */
+static char *open_on_boot = "untitled.orca";
 /*****************************/
 
 #ifdef USE_WIFI
@@ -320,6 +325,16 @@ void setup() {
 
   if(!uxn_eval(&u, PAGE_PROGRAM))
     error("Init", "Failed");
+
+  if(open_on_boot[0]) {
+    char *p = open_on_boot;
+    while(*p) {
+      devconsole->dat[0x2] = *p++;
+      uxn_eval(&u, devconsole->vector);
+    }
+    devconsole->dat[0x2] = '\n';
+    uxn_eval(&u, devconsole->vector);
+  }
 
   run(&u);
 }
