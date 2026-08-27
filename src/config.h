@@ -32,7 +32,10 @@
 /*****************************/
 
 /********** devmidi **********/
+/* Both may be enabled together — every note goes out over whichever of  */
+/* these are active. Nothing connected on one just receives nothing.     */
 #define USE_M5STACK_BLE_MIDI
+#define USE_M5STACK_SERIAL_MIDI
 /*****************************/
 
 #endif

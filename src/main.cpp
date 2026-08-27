@@ -34,9 +34,16 @@ int devmouse_handle(Device *d);
 bool initaudio(audio_callback_t callback);
 void audio_lock();
 void audio_unlock();
-void midi_init();
-void midi_note_on(uint8_t channel, uint8_t note, uint8_t velocity);
-void midi_note_off(uint8_t channel, uint8_t note, uint8_t velocity);
+#ifdef USE_M5STACK_BLE_MIDI
+void midi_ble_init();
+void midi_ble_note_on(uint8_t channel, uint8_t note, uint8_t velocity);
+void midi_ble_note_off(uint8_t channel, uint8_t note, uint8_t velocity);
+#endif
+#ifdef USE_M5STACK_SERIAL_MIDI
+void midi_serial_init();
+void midi_serial_note_on(uint8_t channel, uint8_t note, uint8_t velocity);
+void midi_serial_note_off(uint8_t channel, uint8_t note, uint8_t velocity);
+#endif
 
 static Uxn u;
 static Device *devsystem, *devconsole, *devscreen, *devctrl, *devmouse, *devaudio0;
@@ -134,17 +141,30 @@ midi_deo(Device *d, Uint8 port)
 		Uint8 channel = d->dat[0x2];
 		Uint8 note = d->dat[0x3];
 		Uint8 velocity = d->dat[0xf];
+#ifdef USE_M5STACK_BLE_MIDI
 		if(velocity > 0)
-			midi_note_on(channel, note, velocity);
+			midi_ble_note_on(channel, note, velocity);
 		else
-			midi_note_off(channel, note, 0);
+			midi_ble_note_off(channel, note, 0);
+#endif
+#ifdef USE_M5STACK_SERIAL_MIDI
+		if(velocity > 0)
+			midi_serial_note_on(channel, note, velocity);
+		else
+			midi_serial_note_off(channel, note, 0);
+#endif
 	}
 }
 
 int
 devmidi_init()
 {
-	midi_init();
+#ifdef USE_M5STACK_BLE_MIDI
+	midi_ble_init();
+#endif
+#ifdef USE_M5STACK_SERIAL_MIDI
+	midi_serial_init();
+#endif
 	return 1;
 }
 
@@ -182,6 +202,22 @@ static void
 nil_deo(Device *d, Uint8 port)
 {
 	if(port == 0x1) DEVPEEK16(d->vector, 0x0);
+}
+
+static void
+file_deo_debug(Device *d, Uint8 port)
+{
+	if(port == 0x9) {
+		Uint16 a;
+		DEVPEEK16(a, 0x8);
+		Serial.printf("[debug] file init: name=\"%s\"\n", (char *)&d->mem[a]);
+	}
+	file_deo(d, port);
+	if(port == 0x9 || port == 0xd) {
+		Uint16 res;
+		DEVPEEK16(res, 0x2);
+		Serial.printf("[debug] file result (port=0x%x): %u\n", port, res);
+	}
 }
 
 static int
@@ -272,7 +308,7 @@ void setup() {
 	/* empty      */ uxn_port(&u, 0x7, nil_dei, nil_deo);
 	/* control    */ devctrl = uxn_port(&u, 0x8, nil_dei, nil_deo);
 	/* mouse      */ devmouse = uxn_port(&u, 0x9, nil_dei, nil_deo);
-	/* empty      */ uxn_port(&u, 0xa, nil_dei, file_deo);
+	/* empty      */ uxn_port(&u, 0xa, nil_dei, file_deo_debug);
 	/* datetime   */ uxn_port(&u, 0xb, datetime_dei, nil_deo);
 	/* midi       */ uxn_port(&u, 0xc, nil_dei, midi_deo);
 	/* empty      */ uxn_port(&u, 0xd, nil_dei, nil_deo);
