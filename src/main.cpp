@@ -1,6 +1,7 @@
 #include <M5Unified.h>
 #include <SPIFFS.h>
 #include <Wire.h>
+#include <driver/i2s.h>
 
 /*
 Copyright (c) 2021 Devine Lu Linvega
@@ -251,6 +252,259 @@ static void screen_deo_auto(void)
 }
 
 /*
+@|Audio ---------------------------------------------------------------- */
+
+/* Ported from the reference Audio device (git.sr.ht/~rabbits/uxn2's
+ * uxn2.c) -- four independent ADSR-enveloped sample-playback channels
+ * at 0x30/0x40/0x50/0x60, 0x10 bytes apart. The physics (envelope, pitch
+ * table, mixing) is unchanged from the version already proven out on
+ * this board in the old Device-API branch, including the audible-click
+ * fix below; only the dispatch glue changes to match this file's
+ * single-function emu_dei/emu_deo style and the current port addresses. */
+
+#define AUDIO_POLYPHONY 4
+#define AUDIO_SAMPLE_FREQUENCY 44100
+#define AUDIO_NOTE_PERIOD (AUDIO_SAMPLE_FREQUENCY * 0x4000 / 11025)
+#define AUDIO_ADSR_STEP (AUDIO_SAMPLE_FREQUENCY / 0xf)
+/* uxn's mixer divides each channel by 0x180 for headroom; this bare DAC
+ * has plenty of room before its output stage clips, so make up for it
+ * here. Raise/lower to taste -- clamped below to avoid wraparound. */
+#define AUDIO_GAIN 6
+
+typedef struct {
+	uint8_t *addr;
+	uint32_t count, advance, period, age, a, d, s, r;
+	uint16_t i, len;
+	int8_t volume[2];
+	uint8_t pitch, repeat;
+} UxnAudio;
+
+static const uint32_t audio_advances[12] = {
+	0x80000, 0x879c8, 0x8facd, 0x9837f, 0xa1451, 0xaadc1,
+	0xb504f, 0xbfc88, 0xcb2ff, 0xd7450, 0xe411f, 0xf1a1c
+};
+
+static UxnAudio uxn_audio[AUDIO_POLYPHONY];
+static int audio_vector[AUDIO_POLYPHONY];
+static volatile uint8_t audio_finished_flags = 0;
+static SemaphoreHandle_t audio_mutex;
+
+static int32_t audio_envelope(UxnAudio *c, uint32_t age)
+{
+	if(!c->r) return 0x0888;
+	if(age < c->a) return 0x0888 * age / c->a;
+	if(age < c->d) return 0x0444 * (2 * c->d - c->a - age) / (c->d - c->a);
+	if(age < c->s) return 0x0444;
+	if(age < c->r) return 0x0444 * (c->r - age) / (c->r - c->s);
+	c->advance = 0;
+	return 0x0000;
+}
+
+static int audio_render(int instance, int16_t *sample, int16_t *end)
+{
+	UxnAudio *c = &uxn_audio[instance];
+	int32_t s;
+	if(!c->advance || !c->period) return 0;
+	while(sample < end) {
+		c->count += c->advance;
+		c->i += c->count / c->period;
+		c->count %= c->period;
+		if(c->i >= c->len) {
+			if(!c->repeat) { c->advance = 0; break; }
+			c->i %= c->len;
+		}
+		s = (int8_t)(c->addr[c->i] + 0x80) * audio_envelope(c, c->age++);
+		*sample++ += s * c->volume[0] / 0x180;
+		*sample++ += s * c->volume[1] / 0x180;
+	}
+	if(!c->advance) audio_finished_flags |= (1 << instance);
+	return 1;
+}
+
+static void audio_start(int instance, uint8_t *d)
+{
+	UxnAudio *c = &uxn_audio[instance];
+	uint8_t pitch = d[0xf] & 0x7f;
+	uint16_t addr = peek2(&d[0xc]);
+	uint16_t adsr = peek2(&d[0x8]);
+	c->len = peek2(&d[0xa]);
+	if(c->len > 0x10000 - addr) c->len = 0x10000 - addr;
+	c->addr = &ram[addr];
+	c->volume[0] = d[0xe] >> 4;
+	c->volume[1] = d[0xe] & 0xf;
+	c->repeat = !(d[0xf] & 0x80);
+	if(pitch < 108 && c->len)
+		c->advance = audio_advances[pitch % 12] >> (8 - pitch / 12);
+	else {
+		c->advance = 0;
+		return;
+	}
+	c->a = AUDIO_ADSR_STEP * (adsr >> 12);
+	c->d = AUDIO_ADSR_STEP * (adsr >> 8 & 0xf) + c->a;
+	c->s = AUDIO_ADSR_STEP * (adsr >> 4 & 0xf) + c->d;
+	c->r = AUDIO_ADSR_STEP * (adsr >> 0 & 0xf) + c->s;
+	c->age = 0;
+	c->i = 0;
+	if(c->len <= 0x100) /* single cycle mode */
+		c->period = AUDIO_NOTE_PERIOD * 337 / 2 / c->len;
+	else /* sample repeat mode */
+		c->period = AUDIO_NOTE_PERIOD;
+}
+
+static void audio_play(int instance)
+{
+	xSemaphoreTake(audio_mutex, portMAX_DELAY);
+	audio_start(instance, &dev[0x30 + instance * 0x10]);
+	xSemaphoreGive(audio_mutex);
+}
+
+static uint8_t audio_get_vu(UxnAudio *c)
+{
+	int i;
+	int32_t sum[2] = {0, 0};
+	if(!c->advance || !c->period) return 0;
+	for(i = 0; i < 2; i++) {
+		if(!c->volume[i]) continue;
+		sum[i] = 1 + audio_envelope(c, c->age) * c->volume[i] / 0x800;
+		if(sum[i] > 0xf) sum[i] = 0xf;
+	}
+	return (sum[0] << 4) | sum[1];
+}
+
+static uint8_t audio_dei(uint8_t port)
+{
+	UxnAudio *c = &uxn_audio[(port >> 4) - 3];
+	switch(port & 0xf) {
+	case 0x2: return c->i >> 8;
+	case 0x3: return c->i;
+	case 0x4: return audio_get_vu(c);
+	default: return dev[port];
+	}
+}
+
+static void audio_deo(uint8_t port)
+{
+	int instance = (port >> 4) - 3;
+	switch(port & 0xf) {
+	case 0x1: audio_vector[instance] = peek2(&dev[port & 0xf0]); break;
+	case 0xf: audio_play(instance); break;
+	}
+}
+
+/* Keep the DAC engaged for a short while after the last active sample, so
+ * a run of closely-spaced notes (e.g. a fast arpeggio) doesn't repeatedly
+ * stop/start it -- each restart has its own brief click too. */
+#define AUDIO_IDLE_HANGOVER_MS 200
+
+static bool audio_any_channel_active(void)
+{
+	int i;
+	for(i = 0; i < AUDIO_POLYPHONY; i++)
+		if(uxn_audio[i].advance) return true;
+	return false;
+}
+
+static void audio_mix(int16_t *stream, size_t bytes)
+{
+	memset(stream, 0, bytes);
+	for(int i = 0; i < AUDIO_POLYPHONY; i++)
+		audio_render(i, stream, stream + bytes / sizeof(int16_t));
+}
+
+static const i2s_config_t audio_i2s_config = {
+	.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
+	.sample_rate = AUDIO_SAMPLE_FREQUENCY,
+	.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+	.channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
+	.communication_format = I2S_COMM_FORMAT_STAND_MSB,
+	.intr_alloc_flags = 0,
+	.dma_buf_count = 16,
+	.dma_buf_len = 64,
+	.use_apll = false
+};
+
+static void audio_task(void *params)
+{
+	const int samples = 64;
+	int16_t stereo_buffer[samples * 2];
+	uint16_t mono_buffer[samples];
+	size_t bytes_written = 0;
+	int i;
+	/* uxn ROMs commonly use a zero-length ADSR attack for percussive/plucky
+	 * sounds, which makes audio_render() jump straight from silence to
+	 * near-full amplitude on the very first sample of a note. This bare
+	 * internal DAC has no analog output filtering to smooth that transient,
+	 * so it comes through as an audible click; a one-pole smoothing filter
+	 * softens any abrupt jump (not just this one case) without altering
+	 * uxn's audio semantics. */
+	static int32_t lp_state = 0;
+	bool dac_running = false;
+	unsigned long last_active_ms = 0;
+	(void)params;
+
+	for(;;) {
+		if(audio_any_channel_active()) {
+			last_active_ms = millis();
+			if(!dac_running) { i2s_start(I2S_NUM_0); dac_running = true; }
+		} else if(dac_running && millis() - last_active_ms > AUDIO_IDLE_HANGOVER_MS) {
+			i2s_zero_dma_buffer(I2S_NUM_0);
+			i2s_stop(I2S_NUM_0);
+			dac_running = false;
+			lp_state = 0;
+		}
+
+		if(!dac_running) {
+			vTaskDelay(pdMS_TO_TICKS(5));
+			continue;
+		}
+
+		xSemaphoreTake(audio_mutex, portMAX_DELAY);
+		audio_mix(stereo_buffer, sizeof(stereo_buffer));
+		xSemaphoreGive(audio_mutex);
+
+		for(i = 0; i < samples; i++) {
+			int32_t mixed = ((int32_t)stereo_buffer[2 * i] + stereo_buffer[2 * i + 1]) * AUDIO_GAIN;
+			if(mixed > 32767) mixed = 32767;
+			if(mixed < -32768) mixed = -32768;
+			lp_state += (mixed - lp_state) >> 3;
+			mono_buffer[i] = (uint16_t)((int16_t)lp_state) ^ 0x8000;
+		}
+
+		i2s_write(I2S_NUM_0, mono_buffer, sizeof(mono_buffer), &bytes_written, portMAX_DELAY);
+	}
+}
+
+/* M5Stack Core's onboard speaker is driven directly by the ESP32's internal
+ * 8-bit DAC on GPIO25 (I2S_DAC_CHANNEL_RIGHT_EN); the I2S peripheral's
+ * built-in-DAC mode is just a convenient DMA-fed streaming path to it, not
+ * real I2S output to an external chip. This DAC is audibly noisy just from
+ * being electrically active, even while outputting silence -- confirmed by
+ * disabling the whole subsystem and hearing the click disappear entirely,
+ * independent of scheduling or buffer size -- so it's started only while a
+ * channel is actually playing and stopped again once idle (audio_task()). */
+static bool audio_init(void)
+{
+	i2s_driver_uninstall(I2S_NUM_0);
+	if(i2s_driver_install(I2S_NUM_0, &audio_i2s_config, 0, NULL) != ESP_OK) {
+		Serial.println("error: i2s_driver_install");
+		return false;
+	}
+	if(i2s_set_dac_mode(I2S_DAC_CHANNEL_RIGHT_EN) != ESP_OK) {
+		Serial.println("error: i2s_set_dac_mode");
+		return false;
+	}
+	i2s_stop(I2S_NUM_0);
+
+	audio_mutex = xSemaphoreCreateMutex();
+	/* Pinned to the same core as the Arduino loop task (1), away from the
+	 * NimBLE stack (core 0) -- otherwise BLE radio activity can starve this
+	 * task long enough to underrun the I2S DMA buffer and click, even when
+	 * uxn isn't actively playing audio. */
+	xTaskCreatePinnedToCore(audio_task, "audio_task", 4000, NULL, 10, nullptr, 1);
+	return true;
+}
+
+/*
 @|Controller (Faces I2C keyboard) ------------------------------------ */
 
 #define KEYBOARD_I2C_ADDR 0x08
@@ -472,6 +726,18 @@ static inline uint8_t emu_dei(const uint8_t port)
 	case 0x2b: return rY;
 	case 0x2c: return rA >> 8;
 	case 0x2d: return rA;
+	case 0x32:
+	case 0x33:
+	case 0x34:
+	case 0x42:
+	case 0x43:
+	case 0x44:
+	case 0x52:
+	case 0x53:
+	case 0x54:
+	case 0x62:
+	case 0x63:
+	case 0x64: return audio_dei(port);
 	case 0xc0:
 	case 0xc1:
 	case 0xc2:
@@ -510,6 +776,14 @@ static inline void emu_deo(const uint8_t port, const uint8_t value)
 	case 0x2d: rA = peek2(&dev[0x2c]); break;
 	case 0x2e: screen_deo_pixel(); break;
 	case 0x2f: screen_deo_sprite(); break;
+	case 0x31:
+	case 0x3f:
+	case 0x41:
+	case 0x4f:
+	case 0x51:
+	case 0x5f:
+	case 0x61:
+	case 0x6f: audio_deo(port); break;
 	case 0x81: controller_vector = peek2(&dev[0x80]); break;
 	case 0xa5: poke2(&dev[0xa2], file_stat(peek2(&dev[0xa4]), file_length)); break;
 	case 0xa6: poke2(&dev[0xa2], file_delete()); break;
@@ -615,6 +889,7 @@ void setup(void)
 	M5.Lcd.fillScreen(TFT_BLACK);
 
 	controller_init();
+	audio_init();
 	midi_ble_init();
 	midi_serial_init();
 
@@ -644,12 +919,29 @@ void loop(void)
 	static uint32_t next_frame = 0;
 	uint32_t now = millis();
 
+	if(dev[0xf]) return; /* ROM halted -- see System/state in orca.tal's device table */
+
 	/* Forward bytes typed into the serial monitor into the console
 	 * device, the same way uxncli/uxnemu feed stdin -- lets you type a
 	 * filename in by hand instead of only relying on open_on_boot. */
 	while(Serial.available() > 0) {
 		dev[0x12] = Serial.read();
 		if(console_vector) uxn_eval(console_vector);
+	}
+
+	/* Audio channels finish on the audio task's own thread (see
+	 * audio_render()), which must not call back into uxn_eval() itself --
+	 * that would let the audio task and the main thread mutate uxn's
+	 * single-threaded VM state concurrently. It just raises a flag here
+	 * instead, polled and evaluated from the main thread like everything
+	 * else. */
+	if(audio_finished_flags) {
+		for(int i = 0; i < AUDIO_POLYPHONY; i++) {
+			if(audio_finished_flags & (1 << i)) {
+				audio_finished_flags &= ~(1 << i);
+				if(audio_vector[i]) uxn_eval(audio_vector[i]);
+			}
+		}
 	}
 
 	if(now < next_frame) return;
