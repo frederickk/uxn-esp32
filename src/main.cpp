@@ -19,7 +19,7 @@ port -- ported here from M5StickC (240x135) to M5Stack Core (320x240),
 with the Faces I2C keyboard in place of the two-button demo controller.
 */
 
-static char *rom = "/spiffs/orca.rom";
+static char *rom = "/orca.rom";
 static char *open_on_boot = "untitled.orca";
 
 #define SCREEN_W 320
@@ -884,15 +884,13 @@ static bool load_rom(const char *filepath)
 void setup(void)
 {
 	Serial.begin(115200);
-	M5.begin();
-	M5.Lcd.setRotation(1);
-	M5.Lcd.fillScreen(TFT_BLACK);
 
-	controller_init();
-	audio_init();
-	midi_ble_init();
-	midi_serial_init();
-
+	/* Grab the two big VM buffers first, while the heap is still one
+	 * contiguous block. M5.begin()/audio_init()/midi_ble_init() (NimBLE
+	 * in particular) each carve out their own smaller allocations; by
+	 * the time they're done, tens of KB of aggregate free heap can be
+	 * fragmented into pieces too small to satisfy a single ~75KB
+	 * calloc(), even though the total is more than enough. */
 	if((ram = (uint8_t *)calloc(0x10000, 1)) == nullptr) {
 		Serial.println("Not enough memory for uxn RAM");
 		return;
@@ -901,6 +899,15 @@ void setup(void)
 		Serial.println("Not enough memory for screen buffer");
 		return;
 	}
+
+	M5.begin();
+	M5.Lcd.setRotation(1);
+	M5.Lcd.fillScreen(TFT_BLACK);
+
+	controller_init();
+	audio_init();
+	midi_ble_init();
+	midi_serial_init();
 
 	if(!SPIFFS.begin()) {
 		Serial.println("SPIFFS mount failed");
