@@ -1,7 +1,9 @@
 #include <M5Unified.h>
 #include <SPIFFS.h>
 #include <Wire.h>
+#include <WiFi.h>
 #include <driver/i2s.h>
+#include "wifi_credentials.h"
 
 /*
 Copyright (c) 2021 Devine Lu Linvega
@@ -708,6 +710,52 @@ static uint16_t file_delete(void)
 }
 
 /*
+@|WiFi ------------------------------------------------------------------ */
+
+/* Only used to set the ESP32's software clock via NTP for the DateTime
+ * device below -- nothing else in this port needs a network connection.
+ * Adjust the offsets for your timezone; defaults to UTC since guessing
+ * wrong would be worse than leaving it alone. gmt_offset_sec is the
+ * standard (non-DST) offset from UTC; daylight_offset_sec is the extra
+ * amount applied only while daylight saving is in effect. */
+#define WIFI_GMT_OFFSET_SEC 0
+#define WIFI_DAYLIGHT_OFFSET_SEC 0
+#define WIFI_CONNECT_TIMEOUT_MS 10000
+
+/* ESP32 classic has one radio and separate memory pools for the WiFi and
+ * BLE stacks; there isn't enough heap for both to stay resident at once
+ * alongside M5GFX/I2S audio (confirmed on hardware: WiFi's own NVS/PHY
+ * init fails outright if BLE has already started). So WiFi runs first,
+ * before anything else touches memory, and is fully torn down --
+ * WiFi.mode(WIFI_OFF) actually releases its allocations, unlike just
+ * disconnecting -- before M5.begin()/audio_init()/midi_ble_init() run. */
+static void wifi_connect_and_sync_time(void)
+{
+	uint32_t start = millis();
+	WiFi.mode(WIFI_STA);
+	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+	Serial.printf("Connecting to \"%s\"", WIFI_SSID);
+	while(WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS) {
+		delay(250);
+		Serial.print(".");
+	}
+	if(WiFi.status() != WL_CONNECTED) {
+		Serial.println(" failed, continuing without WiFi/NTP");
+	} else {
+		Serial.println(" connected");
+		/* configTime() starts an async SNTP sync -- getLocalTime() blocks
+		 * (with its own internal retry/timeout) until a reply actually
+		 * lands, so WiFi isn't torn down before the sync completes. */
+		configTime(WIFI_GMT_OFFSET_SEC, WIFI_DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
+		struct tm timeinfo;
+		if(!getLocalTime(&timeinfo, 5000))
+			Serial.println("NTP sync timed out");
+	}
+	WiFi.disconnect(true);
+	WiFi.mode(WIFI_OFF);
+}
+
+/*
 @|DateTime --------------------------------------------------------------- */
 
 static uint8_t datetime_dei(const uint8_t port)
@@ -921,6 +969,9 @@ void setup(void)
 		Serial.println("Not enough memory for screen buffer");
 		return;
 	}
+
+	/* Before anything else claims memory -- see wifi_connect_and_sync_time. */
+	wifi_connect_and_sync_time();
 
 	M5.begin();
 	M5.Lcd.setRotation(1);

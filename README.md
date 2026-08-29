@@ -2,7 +2,7 @@
 
 A port of the [Uxn](https://wiki.xxiivv.com/site/uxn.html) virtual machine and [Varvara](https://wiki.xxiivv.com/site/varvara.html) environment to the ESP32 platform, forked from [max22/uxn-esp32](https://github.com/max22-/uxn-esp32).
 
-This fork targets the **M5Stack Core + Faces QWERTY Keyboard** ("Faces Pocket") specifically, with `main.cpp` rewritten from scratch against the _current_ Uxn core and device layout (see `git.sr.ht/~rabbits/uxn-m5`), rather than the frozen `uxn` submodule the rest of this repo still carries. The submodule and the `esp32dev` / `m5stack-core2` PlatformIO environments are leftovers from upstream and are **not maintained on this branch** — they don't build against the current `src/main.cpp` (missing lib_deps for `M5Unified`/`ESP32-BLE-MIDI`, and no M5 hardware to run against on `esp32dev` anyway). `m5stack-core-esp32` is the only supported target here, and is the default environment.
+This fork targets the **M5Stack Core + Faces QWERTY Keyboard** ("Faces Pocket") specifically, with `main.cpp` rewritten from scratch against the _current_ Uxn core and device layout (see `git.sr.ht/~rabbits/uxn-m5`). `m5stack-core-esp32` is the only environment, and the default.
 
 # Hardware
 
@@ -22,7 +22,9 @@ git checkout m5-faces-pocket-modern-uxn
 pio run
 ```
 
-No `User_Setup.h`/TFT_eSPI configuration or WiFi credentials are needed — `M5Unified` handles display/board init automatically, and this branch doesn't use WiFi/NTP (see Limitations below).
+No `User_Setup.h`/TFT_eSPI configuration is needed — `M5Unified` handles display/board init automatically.
+
+WiFi is only used once, at boot, to set the system clock via NTP for the DateTime device; nothing else needs a network connection. To enable it, copy `src/wifi_credentials.sample.h` to `src/wifi_credentials.h` (gitignored) and fill in your SSID/password. Without that file the build won't compile at all — if you don't want WiFi, create it anyway with placeholder values; the connection attempt just times out after 10s and boot continues normally.
 
 Then upload everything to the device:
 
@@ -45,6 +47,5 @@ There's no auto-open-on-boot. Confirmed against both the current `uxncli.c` and 
 
 # Limitations
 
-- No WiFi/NTP time sync. The DateTime device reflects the ESP32's internal software clock, which starts unset on every boot — expect it to read as the epoch, not the real time, unless something else calls `settimeofday()`.
+- WiFi only runs once at boot (to sync NTP), then is fully powered off before anything else initializes. ESP32 classic has one radio and separate memory pools for WiFi and BLE; there isn't enough heap for both to stay resident alongside M5GFX/I2S audio (confirmed on hardware: WiFi's own driver init fails outright if BLE has already started). If WiFi fails or times out, the DateTime device just reflects the ESP32's software clock from wherever it last was — expect it to read as the epoch on a cold boot with no WiFi.
 - No Mouse device.
-- `esp32dev` and `m5stack-core2` PlatformIO environments are present in `platformio.ini` but not buildable on this branch (see above).
