@@ -20,7 +20,6 @@ with the Faces I2C keyboard in place of the two-button demo controller.
 */
 
 static char *rom = "/orca.rom";
-static char *open_on_boot = "untitled.orca";
 
 #define SCREEN_W 320
 #define SCREEN_H 240
@@ -110,21 +109,6 @@ static void console_deo_write(uint8_t c)
 		midi_serial_note_off(channel, data1, data2);
 		break;
 	}
-}
-
-/* Types a string into the console device on boot, exactly like a second
- * argv entry to uxncli/uxnemu (see uxn/src/uxncli.c's main()) -- ROMs
- * like Orca that accept a file to open on the command line read it this
- * way rather than via any device or keyboard shortcut. */
-static void console_type(const char *s)
-{
-	if(!*s) return;
-	while(*s) {
-		dev[0x12] = *s++;
-		if(console_vector) uxn_eval(console_vector);
-	}
-	dev[0x12] = '\n';
-	if(console_vector) uxn_eval(console_vector);
 }
 
 /*
@@ -514,8 +498,34 @@ static bool audio_init(void)
 #define KEY_DOWN  0xC0
 #define KEY_LEFT  0xBF
 #define KEY_RIGHT 0xC1
-#define KEY_ALT   0x9B
+#define KEY_ALT   0x81  /* Alt held alone, no key combined with it yet */
 #define CTRL_BIT  0x01
+
+/* The Faces keyboard combines Alt with a second key into a single
+ * hardware-reported byte rather than reporting Alt and the key as two
+ * separate presses -- confirmed against the actual firmware source
+ * (github.com/m5stack/M5Faces, src/M5Faces_Keyboard3.hpp:
+ * KEYBOARD3_ALT_<letter>, values 144-171 with a couple of gaps). What
+ * first looked like Alt's own raw code bouncing between several nearby
+ * values across presses was actually this: different genuine Alt+letter
+ * combos, not one key misbehaving. Map each combo byte straight to
+ * Ctrl+<lowercase letter> -- no arm/disarm state machine needed, since
+ * the keyboard already tells us both halves of the chord in one byte. */
+static const struct { uint8_t code; char ch; } alt_combos[] = {
+	{144, 'q'}, {145, 'w'}, {146, 'e'}, {147, 'r'}, {148, 't'},
+	{149, 'y'}, {150, 'u'}, {151, 'i'}, {152, 'o'}, {153, 'p'},
+	{154, 'a'}, {155, 's'}, {156, 'd'}, {157, 'f'}, {158, 'g'},
+	{159, 'h'}, {160, 'j'}, {161, 'k'}, {162, 'l'},
+	{165, 'z'}, {166, 'x'}, {167, 'c'}, {168, 'v'}, {169, 'b'},
+	{170, 'n'}, {171, 'm'},
+};
+
+static char alt_combo_char(uint8_t key)
+{
+	for(size_t i = 0; i < sizeof(alt_combos) / sizeof(alt_combos[0]); i++)
+		if(alt_combos[i].code == key) return alt_combos[i].ch;
+	return 0;
+}
 
 static int controller_vector = 0;
 
@@ -541,22 +551,24 @@ static void controller_key(uint8_t key)
 	dev[0x83] = 0;
 }
 
+static void controller_send_ctrl_combo(char ch)
+{
+	controller_down(CTRL_BIT);
+	controller_key(ch);
+	controller_up(CTRL_BIT);
+}
+
 static void controller_init(void)
 {
 	Wire.begin();
 	pinMode(KEYBOARD_PIN, INPUT_PULLUP);
 }
 
-/* Alt is a sticky software toggle for Ctrl, like Caps Lock: press it once
- * to arm (stays armed indefinitely), press any other key to send it as
- * Ctrl+key and auto-disarm, or press Alt again to cancel. The keyboard
- * only ever reports one key at a time -- no real simultaneous Ctrl+key
- * chord is possible at the hardware level -- so this emulates it here.
- * last_key tracks the previous poll's key (reset to 0 when idle) purely
- * so a held Alt is only counted once, not re-toggled on every repeat. */
+/* The keyboard only ever reports one byte at a time; last_key (reset to
+ * 0 once the interrupt pin goes idle) suppresses re-firing the same
+ * event on every poll while a key is held. */
 static void controller_poll(void)
 {
-	static bool ctrl_armed = false;
 	static uint8_t last_key = 0;
 
 	if(digitalRead(KEYBOARD_PIN) == LOW) {
@@ -565,27 +577,37 @@ static void controller_poll(void)
 			uint8_t key = Wire.read();
 			bool is_new_press = (key != last_key);
 			last_key = key;
+			if(!is_new_press) continue;
+
+			char combo = alt_combo_char(key);
+			if(combo) {
+				controller_send_ctrl_combo(combo);
+				continue;
+			}
 
 			switch(key) {
 				case KEY_UP:    controller_down(0x10); controller_up(0x10); break;
 				case KEY_DOWN:  controller_down(0x20); controller_up(0x20); break;
 				case KEY_LEFT:  controller_down(0x40); controller_up(0x40); break;
 				case KEY_RIGHT: controller_down(0x80); controller_up(0x80); break;
-				case KEY_ALT:
-					if(is_new_press) {
-						if(ctrl_armed) { controller_up(CTRL_BIT); ctrl_armed = false; }
-						else { controller_down(CTRL_BIT); ctrl_armed = true; }
-					}
-					break;
-				default:
-					controller_key(key);
-					if(ctrl_armed) { controller_up(CTRL_BIT); ctrl_armed = false; }
-					break;
+				case KEY_ALT:   break; /* alone, no combo -- nothing to send yet */
+				default:        controller_key(key); break;
 			}
 		}
 	} else {
 		last_key = 0;
 	}
+}
+
+/* M5Stack Core's three front buttons, left to right, as a hardware
+ * shortcut for the same Ctrl+key combos the keyboard reaches via Alt --
+ * so either input can drive Orca's playback speed and guide toggle. */
+static void buttons_poll(void)
+{
+	M5.update();
+	if(M5.BtnA.wasPressed()) controller_send_ctrl_combo('.'); /* speed down */
+	if(M5.BtnB.wasPressed()) controller_send_ctrl_combo('h'); /* toggle guide */
+	if(M5.BtnC.wasPressed()) controller_send_ctrl_combo(','); /* speed up */
 }
 
 /*
@@ -918,7 +940,6 @@ void setup(void)
 		return;
 	}
 	uxn_eval(0x100);
-	console_type(open_on_boot);
 }
 
 void loop(void)
@@ -929,8 +950,10 @@ void loop(void)
 	if(dev[0xf]) return; /* ROM halted -- see System/state in orca.tal's device table */
 
 	/* Forward bytes typed into the serial monitor into the console
-	 * device, the same way uxncli/uxnemu feed stdin -- lets you type a
-	 * filename in by hand instead of only relying on open_on_boot. */
+	 * device, the same way uxncli/uxnemu feed stdin. Orca's own console
+	 * handling treats this as plain grid-insert typing, not a way to
+	 * open a file -- there's no argv/stdin-driven "open" in the current
+	 * ROM, only its own mouse-driven file browser (Ctrl+O). */
 	while(Serial.available() > 0) {
 		dev[0x12] = Serial.read();
 		if(console_vector) uxn_eval(console_vector);
@@ -955,6 +978,7 @@ void loop(void)
 	next_frame = now + 16; /* 60fps */
 
 	controller_poll();
+	buttons_poll();
 
 	if(screen_vector) uxn_eval(screen_vector);
 	if(screen_reqdraw) screen_flush();

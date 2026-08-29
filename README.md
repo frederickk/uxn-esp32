@@ -7,7 +7,8 @@ This fork targets the **M5Stack Core + Faces QWERTY Keyboard** ("Faces Pocket") 
 # Hardware
 
 - M5Stack Core (ESP32, 320x240 TFT)
-- M5 Faces QWERTY Keyboard module (I2C, SKU A003) — reports one key at a time; Alt is remapped as a sticky Ctrl toggle (press once to arm, press a key to send Ctrl+key and auto-disarm, or press Alt again to cancel)
+- M5 Faces QWERTY Keyboard module (I2C, SKU A003) — reports one key at a time. Its firmware combines Alt+letter into a single hardware-reported byte (see `github.com/m5stack/M5Faces`, `src/M5Faces_Keyboard3.hpp`); this port decodes those bytes directly to Ctrl+letter, matching Orca's own Ctrl shortcuts (Ctrl+H toggles the operator guide, Ctrl+, / Ctrl+. change playback speed, etc).
+- M5Stack Core's three front buttons (A/B/C, left to right) mirror the most common shortcuts as a keyboard-free alternative: A = Ctrl+. (speed down), B = Ctrl+H (toggle guide), C = Ctrl+, (speed up).
 - Optional: an ATmega32U4 board (Arduino Micro/Leonardo-class) wired one-way from GPIO17 for wired USB-MIDI output — see [`midi-bridge/README.md`](midi-bridge/README.md). Not required; BLE MIDI works standalone.
 
 # How to build it
@@ -40,7 +41,7 @@ MIDI is not a dedicated device in the current Varvara spec. Orca (and the refere
 
 ## Opening a file
 
-There's no dedicated "open" device or keyboard shortcut. On boot, `open_on_boot` (in `src/main.cpp`) is typed character-by-character into the Console device, exactly like a second `argv` entry to `uxncli`/`uxnemu` — this is how Orca actually expects to receive a filename to open. You can also type a filename over the serial monitor at any time; `loop()` forwards it into Console/read the same way.
+There's no auto-open-on-boot. Confirmed against both the current `uxncli.c` and `orca.tal` sources: even a real `uxncli orca.rom yourfile.orca` invocation doesn't auto-open the second argument anymore — that was the old (frozen-submodule-era) Orca's behavior, not the current one. Current Orca opens files through its own mouse-driven UI (Ctrl+O), which needs a Mouse device and directory-listing support neither of which this port implements yet (SPIFFS has no real directories to list in the first place). Typing over the serial monitor still works as plain console input — `loop()` forwards it into Console/read — but Orca treats that as grid-insert typing, not a path to open.
 
 # Limitations
 
